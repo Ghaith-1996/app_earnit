@@ -1,0 +1,16 @@
+.gradle/
+/build/
+/app/build/
+/local.properties
+/.idea/
+/.kotlin/
+*.iml
+
+# Release artifacts
+/app/release/
+*.apk
+*.aab
+
+# Signing material — must never be committed
+/key/key
+/key/keystore.properties
