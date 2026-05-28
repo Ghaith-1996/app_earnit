@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,7 @@ class BlockerActivity : ComponentActivity() {
         val factory = RestLockViewModelFactory(
             sessionEngine = container.sessionEngine,
             settingsRepository = container.settingsRepository,
+            fitnessRepository = container.fitnessRepository,
             installedAppsProvider = container.installedAppsProvider,
             permissionGateway = container.permissionGateway,
         )
@@ -50,44 +52,50 @@ class BlockerActivity : ComponentActivity() {
                 val state by vm.sessionState.collectAsState()
                 var supportDialogOpen by remember { mutableStateOf(false) }
 
-                if (state.phase != SessionState.Phase.AwaitingDecision) {
-                    // The user resolved the lock elsewhere (or the session ended);
-                    // dismiss ourselves so the user is back where they were.
-                    finish()
+                LaunchedEffect(state.phase) {
+                    if (state.phase != SessionState.Phase.AwaitingDecision) {
+                        // The user resolved the lock elsewhere (or the session ended);
+                        // dismiss ourselves so the user is back where they were.
+                        finish()
+                    }
                 }
 
-                BlockerScreen(
-                    setsCompleted = state.setsCompleted,
-                    extraRests = state.extraRests,
-                    blockedAppLabel = blockedAppLabel,
-                    onExerciseDone = {
-                        vm.exerciseDone()
-                        finish()
-                    },
-                    onAddThirtySeconds = {
-                        vm.addThirtySeconds()
-                        finish()
-                    },
-                    onFinishWorkout = {
-                        supportDialogOpen = true
-                    },
-                )
-
-                if (supportDialogOpen) {
-                    SupportCreatorDialog(
-                        onWatchAd = {
-                            supportDialogOpen = false
-                            CreatorSupportRewardedAd.showOrContinue(this@BlockerActivity) {
-                                vm.finishWorkout()
-                                finish()
-                            }
-                        },
-                        onNoThanks = {
-                            supportDialogOpen = false
-                            vm.finishWorkout()
+                if (state.phase == SessionState.Phase.AwaitingDecision) {
+                    BlockerScreen(
+                        setsCompleted = state.setsCompleted,
+                        extraRests = state.extraRests,
+                        blockedAppLabel = blockedAppLabel,
+                        onExerciseDone = {
+                            vm.exerciseDone()
                             finish()
                         },
+                        onAddThirtySeconds = {
+                            vm.addThirtySeconds()
+                            finish()
+                        },
+                        onFinishWorkout = {
+                            supportDialogOpen = true
+                        },
                     )
+
+                    if (supportDialogOpen) {
+                        SupportCreatorDialog(
+                            onWatchAd = {
+                                supportDialogOpen = false
+                                CreatorSupportRewardedAd.showOrContinue(this@BlockerActivity) {
+                                    vm.finishWorkout {
+                                        finish()
+                                    }
+                                }
+                            },
+                            onNoThanks = {
+                                supportDialogOpen = false
+                                vm.finishWorkout {
+                                    finish()
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }

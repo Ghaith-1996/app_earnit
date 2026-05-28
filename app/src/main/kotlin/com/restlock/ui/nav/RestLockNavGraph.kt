@@ -9,12 +9,18 @@ import androidx.navigation.compose.rememberNavController
 import com.restlock.ui.AppPickerViewModel
 import com.restlock.ui.HomeViewModel
 import com.restlock.ui.RestLockViewModelFactory
+import com.restlock.ui.SettingsViewModel
+import com.restlock.ui.WorkoutViewModel
 import com.restlock.ui.screens.AppPickerScreen
 import com.restlock.ui.screens.HomeScreen
 import com.restlock.ui.screens.PermissionOnboardingScreen
+import com.restlock.ui.screens.SettingsScreen
+import com.restlock.ui.screens.WorkoutScreen
 
 object Routes {
     const val Home = "home"
+    const val Workout = "workout"
+    const val Settings = "settings"
     const val Permissions = "permissions"
     const val AppPicker = "app-picker"
 }
@@ -32,6 +38,24 @@ fun RestLockNavGraph(
                 viewModel = homeViewModel,
                 onOpenAppPicker = { navController.navigate(Routes.AppPicker) },
                 onOpenPermissions = { navController.navigate(Routes.Permissions) },
+                onOpenWorkout = { navController.navigateTopLevel(Routes.Workout) },
+                onOpenSettings = { navController.navigateTopLevel(Routes.Settings) },
+            )
+        }
+        composable(Routes.Workout) {
+            val workoutViewModel: WorkoutViewModel = viewModel(factory = factory)
+            WorkoutScreen(
+                viewModel = workoutViewModel,
+                onHome = { navController.navigateTopLevel(Routes.Home) },
+                onSettings = { navController.navigateTopLevel(Routes.Settings) },
+            )
+        }
+        composable(Routes.Settings) {
+            val settingsViewModel: SettingsViewModel = viewModel(factory = factory)
+            SettingsScreen(
+                viewModel = settingsViewModel,
+                onHome = { navController.navigateTopLevel(Routes.Home) },
+                onWorkouts = { navController.navigateTopLevel(Routes.Workout) },
             )
         }
         composable(Routes.Permissions) {
@@ -55,5 +79,15 @@ fun RestLockNavGraph(
                 onSaved = { navController.popBackStack() },
             )
         }
+    }
+}
+
+private fun NavHostController.navigateTopLevel(route: String) {
+    navigate(route) {
+        popUpTo(Routes.Home) {
+            saveState = true
+        }
+        launchSingleTop = true
+        restoreState = true
     }
 }

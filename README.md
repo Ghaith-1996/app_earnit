@@ -140,9 +140,11 @@ properties file is in place:
 ./gradlew :app:assembleRelease   # produces app/build/outputs/apk/release/app-release.apk
 ```
 
-If `key/key` or `key/keystore.properties` are absent the release build will
-still compile but will be **unsigned** — Gradle simply omits the signing
-config.
+If `key/key` or `key/keystore.properties` are absent the release build uses
+Android's debug signing key so `assembleRelease` still produces an installable
+APK for local sideload testing. Do not upload that debug-signed APK to a store;
+add the real `key/keystore.properties` file first so Gradle uses the release
+keystore.
 
 Version metadata lives in `app/build.gradle.kts` (`versionCode` /
 `versionName`). Bump `versionCode` for every store upload.

@@ -7,9 +7,15 @@ import com.fitness.restlock.backend.PermissionStatus
 import com.fitness.restlock.backend.blocking.BlockingDiagnostics
 import com.fitness.restlock.backend.blocking.BlockingDiagnosticsState
 import com.fitness.restlock.backend.permissions.PermissionGateway
+import com.restlock.domain.FitnessRepository
+import com.restlock.domain.PlannedWorkout
 import com.restlock.domain.SessionEngine
 import com.restlock.domain.SessionState
 import com.restlock.domain.SettingsRepository
+import com.restlock.domain.ActiveExercisePreview
+import com.restlock.domain.UserProfile
+import com.restlock.domain.WorkoutLog
+import com.restlock.domain.WorkoutProgress
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,28 +41,68 @@ data class HomeUiState(
     val allowedAppCount: Int,
     val permissions: HomePermissionState,
     val blockingDiagnostics: BlockingDiagnosticsState,
+    val recentWorkoutLogs: List<WorkoutLog> = emptyList(),
+    val userProfile: UserProfile = UserProfile(),
+    val savedWorkouts: List<PlannedWorkout> = emptyList(),
+    val activeWorkout: PlannedWorkout? = null,
+    val activeExercisePreview: ActiveExercisePreview? = null,
+)
+
+private data class HomeBaseState(
+    val session: SessionState,
+    val chosenRest: Duration,
+    val allowedAppCount: Int,
+    val permissions: HomePermissionState,
+    val blockingDiagnostics: BlockingDiagnosticsState,
 )
 
 class HomeViewModel(
     private val sessionEngine: SessionEngine,
     private val settingsRepository: SettingsRepository,
+    private val fitnessRepository: FitnessRepository,
     private val permissionGateway: PermissionGateway,
+    private val refreshPermissionsPeriodically: Boolean = true,
 ) : ViewModel() {
     private val permissions = MutableStateFlow(permissionGateway.currentStatus().toHomeState())
 
-    val uiState: StateFlow<HomeUiState> = combine(
+    private val baseState = combine(
         sessionEngine.state,
         settingsRepository.chosenRest,
         settingsRepository.allowedPackages,
         permissions,
         BlockingDiagnostics.state,
     ) { session, rest, allowed, permissionState, diagnostics ->
-        HomeUiState(
+        HomeBaseState(
             session = session,
             chosenRest = rest,
             allowedAppCount = allowed.size,
             permissions = permissionState,
             blockingDiagnostics = diagnostics,
+        )
+    }
+
+    val uiState: StateFlow<HomeUiState> = combine(
+        baseState,
+        fitnessRepository.workoutLogs,
+        fitnessRepository.userProfile,
+        fitnessRepository.savedWorkouts,
+        fitnessRepository.activeWorkoutId,
+    ) { base, logs, profile, savedWorkouts, activeWorkoutId ->
+        val activeWorkout = savedWorkouts.firstOrNull { it.id == activeWorkoutId }
+        HomeUiState(
+            session = base.session,
+            chosenRest = base.chosenRest,
+            allowedAppCount = base.allowedAppCount,
+            permissions = base.permissions,
+            blockingDiagnostics = base.blockingDiagnostics,
+            recentWorkoutLogs = logs.take(3),
+            userProfile = profile,
+            savedWorkouts = savedWorkouts,
+            activeWorkout = activeWorkout,
+            activeExercisePreview = WorkoutProgress.activeExercise(
+                workout = activeWorkout,
+                completedSets = base.session.setsCompleted,
+            ),
         )
     }.stateIn(
         scope = viewModelScope,
@@ -67,20 +113,36 @@ class HomeViewModel(
             allowedAppCount = 0,
             permissions = permissions.value,
             blockingDiagnostics = BlockingDiagnostics.state.value,
+            recentWorkoutLogs = emptyList(),
+            userProfile = UserProfile(),
+            savedWorkouts = emptyList(),
+            activeWorkout = null,
         ),
     )
 
     init {
-        viewModelScope.launch {
-            while (isActive) {
-                refreshPermissions()
-                delay(PERMISSION_REFRESH_MILLIS)
+        if (refreshPermissionsPeriodically) {
+            viewModelScope.launch {
+                while (isActive) {
+                    refreshPermissions()
+                    delay(PERMISSION_REFRESH_MILLIS)
+                }
             }
         }
     }
 
     fun startWorkout(rest: Duration) {
         viewModelScope.launch {
+            fitnessRepository.setActiveWorkoutId(null)
+            settingsRepository.setChosenRest(rest)
+            sessionEngine.startWorkout(rest)
+        }
+    }
+
+    fun startSavedWorkout(workoutId: String, rest: Duration) {
+        val workout = uiState.value.savedWorkouts.firstOrNull { it.id == workoutId } ?: return
+        viewModelScope.launch {
+            fitnessRepository.setActiveWorkoutId(workout.id)
             settingsRepository.setChosenRest(rest)
             sessionEngine.startWorkout(rest)
         }
@@ -88,7 +150,14 @@ class HomeViewModel(
 
     fun addThirtySeconds() = sessionEngine.addThirtySeconds()
     fun exerciseDone() = sessionEngine.exerciseDone()
-    fun finishWorkout() = sessionEngine.finishWorkout()
+    fun finishWorkout() {
+        viewModelScope.launch {
+            runCatching {
+                fitnessRepository.logActiveWorkoutAndClear(System.currentTimeMillis())
+            }
+            sessionEngine.finishWorkout()
+        }
+    }
 
     fun refreshPermissions() {
         permissions.value = permissionGateway.currentStatus().toHomeState()

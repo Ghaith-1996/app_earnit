@@ -13,7 +13,9 @@ val keystoreProps = Properties().apply {
         propsFile.inputStream().use { load(it) }
     }
 }
-val hasReleaseSigning = keystoreFile.exists() && keystoreProps.isNotEmpty()
+val releaseSigningKeys = listOf("storePassword", "keyAlias", "keyPassword")
+val hasReleaseSigning = keystoreFile.exists() &&
+    releaseSigningKeys.all { !keystoreProps.getProperty(it).isNullOrBlank() }
 
 android {
     namespace = "com.fitness.restlock"
@@ -84,9 +86,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            if (hasReleaseSigning) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            // Keep local release APKs sideloadable even before private release signing is configured.
+            signingConfig = signingConfigs.getByName(
+                if (hasReleaseSigning) "release" else "debug",
+            )
         }
     }
 

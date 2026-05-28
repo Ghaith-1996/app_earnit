@@ -7,6 +7,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,17 +19,28 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AddAlarm
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,14 +49,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.restlock.ads.CreatorSupportRewardedAd
+import com.restlock.domain.ActiveExercisePreview
+import com.restlock.domain.ExerciseCatalog
+import com.restlock.domain.FitnessCalculator
+import com.restlock.domain.PlannedWorkout
 import com.restlock.domain.SessionState
+import com.restlock.domain.UserProfile
+import com.restlock.domain.WorkoutLog
 import com.restlock.ui.HomePermissionState
 import com.restlock.ui.HomeUiState
 import com.restlock.ui.HomeViewModel
+import com.restlock.ui.components.ExerciseArtwork
 import com.restlock.ui.components.GlassCard
 import com.restlock.ui.components.PrimaryAction
 import com.restlock.ui.components.SecondaryAction
@@ -54,17 +76,31 @@ import com.restlock.ui.components.toCompactLabel
 import com.restlock.ui.theme.MintBrush
 import com.restlock.ui.theme.PrimaryBrush
 import com.restlock.ui.theme.RestLockPalette
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
     onOpenAppPicker: () -> Unit,
     onOpenPermissions: () -> Unit,
+    onOpenWorkout: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var setupOpen by remember { mutableStateOf(false) }
+    var workoutChooserOpen by remember { mutableStateOf(false) }
     var supportDialogOpen by remember { mutableStateOf(false) }
+    val openRestSetup = { setupOpen = true }
+    val openWorkoutLaunch = {
+        if (state.savedWorkouts.isEmpty()) {
+            setupOpen = true
+        } else {
+            workoutChooserOpen = true
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -79,35 +115,61 @@ fun HomeScreen(
         ) {
             TopBar(state = state)
 
-            if (state.permissions.needsAction) {
-                PermissionBanner(
-                    permissions = state.permissions,
-                    onOpenPermissions = onOpenPermissions,
-                )
-                Spacer(Modifier.height(12.dp))
-            } else {
-                Spacer(Modifier.height(8.dp))
-            }
-
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center,
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                HeroTimer(state = state)
+                if (state.permissions.needsAction) {
+                    PermissionBanner(
+                        permissions = state.permissions,
+                        onOpenPermissions = onOpenPermissions,
+                    )
+                }
+
+                if (state.session.phase == SessionState.Phase.Idle) {
+                    QuickStartCard(
+                        state = state,
+                        onQuickStart = openRestSetup,
+                        onOpenRestSetup = openRestSetup,
+                        onOpenWorkout = onOpenWorkout,
+                        onOpenAppPicker = onOpenAppPicker,
+                    )
+                }
+
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    HeroTimer(state = state)
+                }
+
+                RecentWorkoutsCard(logs = state.recentWorkoutLogs)
+                BlockingDebugStatus(state = state)
             }
 
-            ActionDock(
-                state = state,
-                onStart = { setupOpen = true },
-                onAddThirty = viewModel::addThirtySeconds,
-                onExerciseDone = viewModel::exerciseDone,
-                onFinish = { supportDialogOpen = true },
-                onOpenAppPicker = onOpenAppPicker,
-            )
+            if (state.session.phase != SessionState.Phase.Idle) {
+                Spacer(Modifier.height(12.dp))
+                ActionDock(
+                    state = state,
+                    onStart = openWorkoutLaunch,
+                    onAddThirty = viewModel::addThirtySeconds,
+                    onExerciseDone = viewModel::exerciseDone,
+                    onFinish = { supportDialogOpen = true },
+                    onOpenAppPicker = onOpenAppPicker,
+                )
+            }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
+            MainBottomBar(
+                selectedTab = MainTab.Home,
+                onHome = {},
+                onWorkouts = onOpenWorkout,
+                onSettings = onOpenSettings,
+            )
+            Spacer(Modifier.height(8.dp))
         }
 
         if (setupOpen) {
@@ -122,6 +184,19 @@ fun HomeScreen(
                 onStart = { duration ->
                     setupOpen = false
                     viewModel.startWorkout(duration)
+                },
+            )
+        }
+
+        if (workoutChooserOpen) {
+            WorkoutChoiceSheet(
+                workouts = state.savedWorkouts,
+                profile = state.userProfile,
+                restLabel = state.chosenRest.toCompactLabel(),
+                onDismiss = { workoutChooserOpen = false },
+                onChooseWorkout = { workout ->
+                    workoutChooserOpen = false
+                    viewModel.startSavedWorkout(workout.id, state.chosenRest)
                 },
             )
         }
@@ -210,6 +285,57 @@ private fun PermissionBanner(
 }
 
 @Composable
+private fun QuickStartCard(
+    state: HomeUiState,
+    onQuickStart: () -> Unit,
+    onOpenRestSetup: () -> Unit,
+    onOpenWorkout: () -> Unit,
+    onOpenAppPicker: () -> Unit,
+) {
+    GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 18) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Quick start",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = RestLockPalette.TextHigh,
+                )
+                Text(
+                    text = "Start a ${state.chosenRest.toCompactLabel()} rest lock with ${state.allowedAppCount} allowed app${if (state.allowedAppCount == 1) "" else "s"}.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = RestLockPalette.TextLow,
+                )
+            }
+            PrimaryAction(
+                label = "Quick start",
+                onClick = onQuickStart,
+                leadingIcon = Icons.Rounded.PlayArrow,
+                brush = PrimaryBrush,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SecondaryAction(
+                    label = state.chosenRest.toCompactLabel(),
+                    onClick = onOpenRestSetup,
+                    leadingIcon = Icons.Rounded.AddAlarm,
+                    modifier = Modifier.weight(1f),
+                )
+                SecondaryAction(
+                    label = "Allowed apps",
+                    onClick = onOpenAppPicker,
+                    leadingIcon = Icons.Rounded.Tune,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            SecondaryAction(
+                label = "Build workout",
+                onClick = onOpenWorkout,
+                leadingIcon = Icons.Rounded.FitnessCenter,
+            )
+        }
+    }
+}
+
+@Composable
 private fun HeroTimer(state: HomeUiState) {
     val session = state.session
     val (timeText, caption, progress) = when (session.phase) {
@@ -222,11 +348,15 @@ private fun HeroTimer(state: HomeUiState) {
             val remaining = session.remaining ?: state.chosenRest
             val totalMs = session.chosenRest.inWholeMilliseconds.coerceAtLeast(1)
             val prog = (remaining.inWholeMilliseconds.toFloat() / totalMs)
-            Triple(remaining.toClockString(), "rest until next set", prog)
+            Triple(
+                remaining.toClockString(),
+                state.activeExercisePreview?.definition?.name ?: state.activeWorkout?.name ?: "rest until next set",
+                prog,
+            )
         }
         SessionState.Phase.AwaitingDecision -> Triple(
             "0:00",
-            "pick your next move",
+            state.activeExercisePreview?.definition?.name ?: state.activeWorkout?.name ?: "pick your next move",
             0f,
         )
     }
@@ -239,15 +369,283 @@ private fun HeroTimer(state: HomeUiState) {
             progress = progress,
             timeText = timeText,
             captionText = caption,
+            size = if (session.isInSession) 252.dp else 208.dp,
         )
 
         if (session.isInSession) {
+            ActiveExercisePreviewCard(
+                preview = state.activeExercisePreview,
+                workout = state.activeWorkout,
+            )
             SessionStats(setsCompleted = session.setsCompleted, extraRests = session.extraRests)
         } else {
             IdleHints(allowedAppCount = state.allowedAppCount)
         }
+    }
+}
 
-        BlockingDebugStatus(state = state)
+@Composable
+private fun ActiveExercisePreviewCard(
+    preview: ActiveExercisePreview?,
+    workout: PlannedWorkout?,
+) {
+    if (workout == null) return
+
+    GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 16) {
+        if (preview == null) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Workout complete",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = RestLockPalette.TextHigh,
+                )
+                Text(
+                    text = "All ${workout.totalSets} sets are marked done. Finish the workout when you are ready.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = RestLockPalette.TextLow,
+                )
+            }
+            return@GlassCard
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(
+                modifier = Modifier.size(86.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                ExerciseArtwork(
+                    exercise = preview.definition,
+                    modifier = Modifier.fillMaxSize(),
+                    cornerRadius = 18.dp,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "Current exercise",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = RestLockPalette.TextLow,
+                )
+                Text(
+                    text = preview.definition.name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = RestLockPalette.TextHigh,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "Rank ${preview.exerciseRank}/${preview.exerciseCount} - Set ${preview.setNumberForExercise}/${preview.totalSetsForExercise} - ${preview.plannedExercise.reps} reps",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = RestLockPalette.TextMid,
+                )
+                Text(
+                    text = "${preview.completedSetsInWorkout}/${preview.totalSetsInWorkout} sets completed",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = RestLockPalette.TextLow,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentWorkoutsCard(logs: List<WorkoutLog>) {
+    GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 18) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Last workouts",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = RestLockPalette.TextHigh,
+                )
+                Text(
+                    text = "Latest 3 sessions with approximate calories burned.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = RestLockPalette.TextLow,
+                )
+            }
+
+            if (logs.isEmpty()) {
+                Text(
+                    text = "No workouts logged yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = RestLockPalette.TextMid,
+                )
+            } else {
+                logs.forEach { log ->
+                    RecentWorkoutRow(log = log)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentWorkoutRow(log: WorkoutLog) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = log.name,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = RestLockPalette.TextHigh,
+            )
+            Text(
+                text = "${formatWorkoutDate(log.completedAtMillis)} - ${log.exerciseCount} exercises - ${log.durationMinutes} min",
+                style = MaterialTheme.typography.bodySmall,
+                color = RestLockPalette.TextLow,
+            )
+        }
+        Text(
+            text = "~${log.calories} kcal",
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            color = RestLockPalette.Mint,
+        )
+    }
+}
+
+private fun formatWorkoutDate(epochMillis: Long): String {
+    return SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(epochMillis))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorkoutChoiceSheet(
+    workouts: List<PlannedWorkout>,
+    profile: UserProfile,
+    restLabel: String,
+    onDismiss: () -> Unit,
+    onChooseWorkout: (PlannedWorkout) -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = RestLockPalette.Ink2,
+        contentColor = RestLockPalette.TextHigh,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .width(48.dp)
+                    .height(4.dp)
+                    .background(
+                        color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(2.dp),
+                    )
+            )
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Choose workout",
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                        color = RestLockPalette.TextHigh,
+                    )
+                    Text(
+                        text = "Timer starts with your $restLabel rest interval.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = RestLockPalette.TextMid,
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Close",
+                        tint = RestLockPalette.TextMid,
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                workouts.forEach { workout ->
+                    WorkoutChoiceRow(
+                        workout = workout,
+                        calories = FitnessCalculator.caloriesForPlannedExercises(workout.exercises, profile),
+                        minutes = FitnessCalculator.durationForPlannedExercises(workout.exercises),
+                        onClick = { onChooseWorkout(workout) },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun WorkoutChoiceRow(
+    workout: PlannedWorkout,
+    calories: Int,
+    minutes: Int,
+    onClick: () -> Unit,
+) {
+    val coverExercise = workout.orderedExercises
+        .firstOrNull()
+        ?.exerciseId
+        ?.let(ExerciseCatalog::byId)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.06f),
+                shape = RoundedCornerShape(18.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (coverExercise != null) {
+            ExerciseArtwork(exercise = coverExercise, modifier = Modifier.size(48.dp))
+        } else {
+            Icon(
+                imageVector = Icons.Rounded.FitnessCenter,
+                contentDescription = null,
+                tint = RestLockPalette.Mint,
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = workout.name,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = RestLockPalette.TextHigh,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${workout.exercises.size} exercises - ${workout.totalSets} sets - $minutes min - ~$calories kcal",
+                style = MaterialTheme.typography.bodySmall,
+                color = RestLockPalette.TextLow,
+            )
+        }
+        Icon(
+            imageVector = Icons.Rounded.PlayArrow,
+            contentDescription = null,
+            tint = RestLockPalette.TextMid,
+        )
     }
 }
 
