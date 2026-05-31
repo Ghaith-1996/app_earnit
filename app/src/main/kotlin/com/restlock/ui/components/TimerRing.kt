@@ -45,7 +45,7 @@ fun TimerRing(
     modifier: Modifier = Modifier,
     size: Dp = 280.dp,
     trackBrush: Brush = Brush.sweepGradient(
-        listOf(RestLockPalette.Violet, RestLockPalette.Mint, RestLockPalette.Violet),
+        listOf(RestLockPalette.Ember, RestLockPalette.Mint, RestLockPalette.Ember),
     ),
 ) {
     val animatedProgress by animateFloatAsState(

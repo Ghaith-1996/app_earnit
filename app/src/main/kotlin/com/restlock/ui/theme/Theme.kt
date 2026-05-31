@@ -16,9 +16,9 @@ import androidx.core.view.WindowCompat
 import androidx.compose.foundation.layout.Box
 
 private val RestLockColorScheme = darkColorScheme(
-    primary = RestLockPalette.Violet,
+    primary = RestLockPalette.Ember,
     onPrimary = Color.White,
-    primaryContainer = RestLockPalette.VioletDeep,
+    primaryContainer = RestLockPalette.EmberDeep,
     onPrimaryContainer = Color.White,
     secondary = RestLockPalette.Mint,
     onSecondary = RestLockPalette.Ink0,

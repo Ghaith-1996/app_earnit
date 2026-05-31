@@ -88,7 +88,7 @@ private fun BlockerHeader(blockedAppLabel: String?) {
     ) {
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "REST LOCK",
+            text = "EARN IT!",
             style = MaterialTheme.typography.labelMedium,
             color = RestLockPalette.TextLow,
         )
@@ -115,7 +115,7 @@ private fun BlockerHero() {
                 .clip(CircleShape)
                 .background(
                     Brush.linearGradient(
-                        listOf(RestLockPalette.Violet, RestLockPalette.VioletDeep),
+                        listOf(RestLockPalette.Ember, RestLockPalette.EmberDeep),
                     )
                 ),
             contentAlignment = Alignment.Center,

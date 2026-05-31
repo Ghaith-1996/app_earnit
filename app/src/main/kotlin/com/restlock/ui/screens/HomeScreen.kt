@@ -242,7 +242,7 @@ private fun TopBar(state: HomeUiState) {
     ) {
         Column {
             Text(
-                text = "Rest Lock",
+                text = "Earn it!",
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = RestLockPalette.TextHigh,
             )

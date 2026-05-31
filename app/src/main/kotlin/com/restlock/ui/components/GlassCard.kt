@@ -38,8 +38,8 @@ fun GlassCard(
             modifier = Modifier
                 .background(
                     Brush.linearGradient(
-                        0f to Color.White.copy(alpha = 0.08f),
-                        1f to Color.White.copy(alpha = 0.02f),
+                        0f to Color.White.copy(alpha = 0.07f),
+                        1f to Color(0xFFFF6B35).copy(alpha = 0.015f),
                     )
                 )
                 .padding(contentPadding.dp),
