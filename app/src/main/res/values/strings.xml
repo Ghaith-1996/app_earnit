@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">earn it !</string>
-    <string name="accessibility_service_description">Detects the foreground app only during workout decision locks and returns blocked apps to earn it !. No screen content is used for ads or analytics.</string>
+    <string name="accessibility_service_description">Uses foreground app package names during a workout to return blocked apps to earn it ! only after the rest timer expires. Never reads screen content.</string>
 </resources>

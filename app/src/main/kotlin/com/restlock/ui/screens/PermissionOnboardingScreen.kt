@@ -65,7 +65,7 @@ fun PermissionOnboardingScreen(
                 color = RestLockPalette.TextHigh,
             )
             Text(
-                text = "Rest Lock needs Accessibility only to detect blocked apps after your rest timer reaches 0:00.",
+                text = "Rest Lock uses Accessibility to block apps only after your rest timer reaches 0:00.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = RestLockPalette.TextMid,
             )
@@ -75,12 +75,12 @@ fun PermissionOnboardingScreen(
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 PermissionStatusRow(enabled = accessibilityEnabled)
                 DisclosurePoint(
-                    title = "When it runs",
+                    title = "When blocking runs",
                     body = "Only during the decision lock after a rest timer expires.",
                 )
                 DisclosurePoint(
                     title = "What it checks",
-                    body = "The package name of the app currently in front, so Rest Lock can compare it with your allowed apps.",
+                    body = "During a workout, it remembers the latest foreground app package name so blocking can start at 0:00, even if that app is already open. Apps remain usable throughout the rest countdown.",
                 )
                 DisclosurePoint(
                     title = "What it does",
@@ -88,7 +88,7 @@ fun PermissionOnboardingScreen(
                 )
                 DisclosurePoint(
                     title = "What it does not do",
-                    body = "It does not read messages, passwords, form text, notifications, or screen content for ads or analytics.",
+                    body = "It never reads messages, passwords, form text, notifications, or screen content.",
                 )
                 DisclosurePoint(
                     title = "Where data stays",

@@ -3,6 +3,7 @@ package com.restlock.ui.screens
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.pm.ApplicationInfo
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -151,7 +152,9 @@ fun HomeScreen(
                 }
 
                 RecentWorkoutsCard(logs = state.recentWorkoutLogs)
-                BlockingDebugStatus(state = state)
+                if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    BlockingDebugStatus(state = state)
+                }
             }
 
             if (state.session.phase != SessionState.Phase.Idle) {

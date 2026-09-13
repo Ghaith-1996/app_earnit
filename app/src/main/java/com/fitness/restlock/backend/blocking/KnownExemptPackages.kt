@@ -10,6 +10,15 @@ internal object KnownExemptPackages {
         "com.android.packageinstaller",
         "com.google.android.packageinstaller",
         "com.google.android.apps.safetycenter",
+        // Fallbacks for in-call/emergency surfaces outside the selected default dialer.
+        "com.android.phone",
+        "com.android.server.telecom",
+        "com.android.dialer",
+        "com.google.android.dialer",
+        "com.android.emergency",
+        "com.android.incallui",
+        "com.samsung.android.dialer",
+        "com.samsung.android.incallui",
     )
 
     val commonLauncherPackages = setOf(

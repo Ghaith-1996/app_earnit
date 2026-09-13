@@ -22,6 +22,27 @@ import com.restlock.ui.screens.BlockerScreen
 import com.restlock.ui.screens.SupportCreatorDialog
 import com.restlock.ui.theme.RestLockTheme
 
+internal enum class BlockerLifecycleAction {
+    Stay,
+    Dismiss,
+    OpenSummary,
+    ShowSupport,
+}
+
+internal fun blockerLifecycleAction(
+    state: SessionState,
+    completion: BlockerCompletion,
+    hasPendingSummary: Boolean,
+): BlockerLifecycleAction = when {
+    state.phase == SessionState.Phase.Resting -> BlockerLifecycleAction.Dismiss
+    state.phase == SessionState.Phase.Idle && hasPendingSummary -> BlockerLifecycleAction.OpenSummary
+    completion is BlockerCompletion.Finished && completion.log != null -> BlockerLifecycleAction.OpenSummary
+    completion is BlockerCompletion.Finished -> BlockerLifecycleAction.ShowSupport
+    completion == BlockerCompletion.Saving -> BlockerLifecycleAction.Stay
+    state.phase != SessionState.Phase.AwaitingDecision -> BlockerLifecycleAction.Dismiss
+    else -> BlockerLifecycleAction.Stay
+}
+
 /**
  * Full-screen lock prompt shown when the user opens a blocked app during
  * [SessionState.Phase.AwaitingDecision].
@@ -58,15 +79,11 @@ class BlockerActivity : ComponentActivity() {
                 var supportDialogOpen by rememberSaveable { mutableStateOf(false) }
 
                 LaunchedEffect(state.phase, completion, pendingSummary) {
-                    val result = completion
-                    when {
-                        state.phase == SessionState.Phase.Resting -> finish()
-                        state.phase == SessionState.Phase.Idle && pendingSummary != null -> openWorkoutSummary()
-                        result is BlockerCompletion.Finished -> {
-                            if (result.log != null) openWorkoutSummary() else supportDialogOpen = true
-                        }
-                        result == BlockerCompletion.Saving -> Unit
-                        state.phase != SessionState.Phase.AwaitingDecision -> finish()
+                    when (blockerLifecycleAction(state, completion, pendingSummary != null)) {
+                        BlockerLifecycleAction.Dismiss -> finish()
+                        BlockerLifecycleAction.OpenSummary -> openWorkoutSummary()
+                        BlockerLifecycleAction.ShowSupport -> supportDialogOpen = true
+                        BlockerLifecycleAction.Stay -> Unit
                     }
                 }
 
