@@ -10,7 +10,6 @@ import com.restlock.domain.MuscleGroup
 import com.restlock.domain.PlannedExercise
 import com.restlock.domain.PlannedWorkout
 import com.restlock.domain.UserProfile
-import com.restlock.domain.WorkoutLog
 import com.restlock.domain.normalizedWorkoutExercises
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -208,33 +207,4 @@ class WorkoutViewModel(
         }
     }
 
-    fun logBuilderWorkout() {
-        val builder = builderState.value
-        val plannedExercises = builder.plannedExercises.normalizedWorkoutExercises()
-        if (plannedExercises.isEmpty()) return
-
-        viewModelScope.launch {
-            val name = builder.workoutName.ifBlank { "Workout" }
-            val now = System.currentTimeMillis()
-            val workout = PlannedWorkout(
-                id = builder.editingWorkoutId ?: "workout-$now",
-                name = name,
-                exercises = plannedExercises,
-                createdAtMillis = builder.editingCreatedAtMillis ?: now,
-            )
-            fitnessRepository.saveWorkout(workout)
-            fitnessRepository.logWorkout(workout.toLog(uiState.value.profile))
-            closeBuilder()
-        }
-    }
-
-    private fun PlannedWorkout.toLog(profile: UserProfile): WorkoutLog {
-        return WorkoutLog(
-            name = name,
-            completedAtMillis = System.currentTimeMillis(),
-            durationMinutes = FitnessCalculator.durationForPlannedExercises(exercises),
-            calories = FitnessCalculator.caloriesForPlannedExercises(exercises, profile),
-            exerciseCount = exerciseIds.size,
-        )
-    }
 }

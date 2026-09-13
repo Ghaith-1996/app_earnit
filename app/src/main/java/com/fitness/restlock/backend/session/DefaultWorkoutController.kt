@@ -2,6 +2,8 @@ package com.fitness.restlock.backend.session
 
 import com.fitness.restlock.backend.PermissionStatus
 import com.fitness.restlock.backend.WorkoutController
+import com.fitness.restlock.backend.WorkoutCompletion
+import com.fitness.restlock.backend.WorkoutStart
 import com.fitness.restlock.backend.WorkoutMode
 import com.fitness.restlock.backend.WorkoutState
 import com.fitness.restlock.backend.alarm.RestAlarmScheduler
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -92,18 +95,19 @@ class DefaultWorkoutController(
         }
     }
 
-    override suspend fun startWorkout(restSeconds: Int, plannedSets: Int?): Boolean {
+    override suspend fun startWorkout(restSeconds: Int, plannedSets: Int?, workoutId: String?): Boolean {
         return execute {
             val nowMillis = clock.nowMillis()
             var started = false
             persistAndSyncAlarm {
-                if (it.mode != WorkoutMode.Idle || (plannedSets != null && plannedSets <= 0)) {
+                if (it.mode != WorkoutMode.Idle || it.pendingCompletion != null ||
+                    (plannedSets != null && plannedSets <= 0)) {
                     it
                 } else {
                     started = true
                     WorkoutSessionReducer.startWorkout(
                         WorkoutSessionReducer.setRestDuration(it, restSeconds), nowMillis, plannedSets,
-                    )
+                    ).copy(activeWorkout = workoutId?.let { id -> WorkoutStart(id, nowMillis) })
                 }
             }
             started
@@ -119,24 +123,29 @@ class DefaultWorkoutController(
         }
     }
 
-    override suspend fun exerciseDone(): Boolean {
+    override suspend fun exerciseDone(): WorkoutCompletion? {
         return execute {
             val nowMillis = clock.nowMillis()
-            var completedWorkout = false
+            var completion: WorkoutCompletion? = null
             persistAndSyncAlarm {
                 val next = WorkoutSessionReducer.exerciseDone(it, nowMillis)
-                completedWorkout = it.mode == WorkoutMode.AwaitingDecision && next.mode == WorkoutMode.Idle
-                next
+                if (it.mode == WorkoutMode.AwaitingDecision && next.mode == WorkoutMode.Idle) {
+                    completion = WorkoutCompletion(it.completedSets + 1, nowMillis)
+                }
+                next.copy(pendingCompletion = completion ?: it.pendingCompletion)
             }
-            completedWorkout
+            completion
         }
     }
 
-    override suspend fun finishWorkout() {
-        execute {
+    override suspend fun finishWorkout(): WorkoutCompletion {
+        return execute {
+            var completion = WorkoutCompletion(0, clock.nowMillis())
             persistAndSyncAlarm {
-                WorkoutSessionReducer.finishWorkout(it)
+                completion = it.pendingCompletion ?: WorkoutCompletion(it.completedSets, clock.nowMillis())
+                WorkoutSessionReducer.finishWorkout(it).copy(pendingCompletion = completion)
             }
+            completion
         }
     }
 
@@ -159,6 +168,16 @@ class DefaultWorkoutController(
 
     private fun enqueue(command: suspend () -> Unit) {
         commands.trySend(command)
+    }
+
+    override suspend fun pendingCompletion(): WorkoutCompletion? = store.snapshots.first().pendingCompletion
+
+    override suspend fun activeWorkout(): WorkoutStart? = store.snapshots.first().let {
+        if (it.mode == WorkoutMode.Idle) null else it.activeWorkout
+    }
+
+    override suspend fun acknowledgeCompletion() {
+        execute { store.update { it.copy(pendingCompletion = null, activeWorkout = null) } }
     }
 
     private suspend fun <T> execute(command: suspend () -> T): T {

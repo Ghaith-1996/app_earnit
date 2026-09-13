@@ -92,13 +92,30 @@ data class PlannedWorkout(
         get() = orderedExercises.sumOf { it.sets * it.reps }
 }
 
+/** A null start time preserves uncertainty for sessions created before timing was stored. */
+data class ActiveWorkoutSession(
+    val workoutId: String,
+    val startedAtMillis: Long?,
+)
+
 data class WorkoutLog(
     val name: String,
     val completedAtMillis: Long,
-    val durationMinutes: Int,
+    val durationMinutes: Int?,
     val calories: Int,
     val exerciseCount: Int,
-)
+    val startedAtMillis: Long? = null,
+    val completedSets: Int? = null,
+    val plannedSets: Int? = null,
+) {
+    /** Legacy records have no trustworthy set counts or completion status. */
+    val completedFully: Boolean?
+        get() = if (completedSets != null && plannedSets != null) {
+            plannedSets > 0 && completedSets >= plannedSets
+        } else {
+            null
+        }
+}
 
 fun List<PlannedExercise>.normalizedWorkoutExercises(): List<PlannedExercise> {
     return mapIndexed { index, exercise -> index to exercise }
