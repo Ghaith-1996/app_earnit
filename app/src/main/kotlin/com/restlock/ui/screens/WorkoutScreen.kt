@@ -25,19 +25,28 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,6 +80,32 @@ fun WorkoutScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
 
+    state.pendingDeletion?.let { workout ->
+        AlertDialog(
+            onDismissRequest = viewModel::cancelDeleteWorkout,
+            title = { Text("Delete \"${workout.name}\"?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("This removes the saved routine. Your workout history will not be deleted.")
+                    state.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelDeleteWorkout, enabled = !state.isDeleting) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDeleteWorkout, enabled = !state.isDeleting) {
+                    Text(
+                        if (state.isDeleting) "Deleting..." else "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -87,8 +122,16 @@ fun WorkoutScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            state.message?.let { message ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(message, modifier = Modifier.weight(1f), color = RestLockPalette.TextMid)
+                    IconButton(onClick = viewModel::dismissMessage) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Dismiss message")
+                    }
+                }
+            }
             if (sessionActive) {
-                Text("A workout is running. Return Home to continue or finish it.")
+                Text("A workout is running. Finish or end it before editing routines or starting another workout.")
                 SecondaryAction(label = "Return to session", onClick = onHome)
             }
             if (state.isBuilderOpen && !sessionActive) {
@@ -109,6 +152,7 @@ fun WorkoutScreen(
                     state = state,
                     onAddWorkout = viewModel::startAddingWorkout,
                     onEditWorkout = viewModel::startEditingWorkout,
+                    onDeleteWorkout = viewModel::requestDeleteWorkout,
                     onStartSavedWorkout = onStartSavedWorkout,
                     sessionActive = sessionActive,
                 )
@@ -152,6 +196,7 @@ private fun WorkoutOverview(
     state: WorkoutUiState,
     onAddWorkout: () -> Unit,
     onEditWorkout: (PlannedWorkout) -> Unit,
+    onDeleteWorkout: (PlannedWorkout) -> Unit,
     onStartSavedWorkout: (PlannedWorkout) -> Unit,
     sessionActive: Boolean,
 ) {
@@ -164,7 +209,7 @@ private fun WorkoutOverview(
                     color = RestLockPalette.TextHigh,
                 )
                 Text(
-                    text = "Pick a muscle section, add exercises, then save or log the workout.",
+                    text = "Pick a muscle section, add exercises, then save and start your workout.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextLow,
                 )
@@ -182,6 +227,7 @@ private fun WorkoutOverview(
     SavedWorkoutsCard(
         state = state,
         onEditWorkout = onEditWorkout,
+        onDeleteWorkout = onDeleteWorkout,
         onStartSavedWorkout = onStartSavedWorkout,
         sessionActive = sessionActive,
     )
@@ -193,6 +239,7 @@ private fun WorkoutOverview(
 private fun SavedWorkoutsCard(
     state: WorkoutUiState,
     onEditWorkout: (PlannedWorkout) -> Unit,
+    onDeleteWorkout: (PlannedWorkout) -> Unit,
     onStartSavedWorkout: (PlannedWorkout) -> Unit,
     sessionActive: Boolean,
 ) {
@@ -220,6 +267,7 @@ private fun SavedWorkoutsCard(
                         ),
                         minutes = FitnessCalculator.durationForPlannedExercises(workout.exercises),
                         onEdit = { onEditWorkout(workout) },
+                        onDelete = { onDeleteWorkout(workout) },
                         onStart = { onStartSavedWorkout(workout) },
                         sessionActive = sessionActive,
                     )
@@ -235,9 +283,11 @@ private fun SavedWorkoutRow(
     calories: Int,
     minutes: Int,
     onEdit: () -> Unit,
+    onDelete: () -> Unit,
     onStart: () -> Unit,
     sessionActive: Boolean,
 ) {
+    var menuExpanded by remember(workout.id) { mutableStateOf(false) }
     val coverExercise = workout.orderedExercises
         .firstOrNull()
         ?.exerciseId
@@ -271,13 +321,6 @@ private fun SavedWorkoutRow(
                 color = RestLockPalette.TextLow,
             )
         }
-        IconButton(onClick = onEdit, enabled = !sessionActive) {
-            Icon(
-                imageVector = Icons.Rounded.Edit,
-                contentDescription = "Modify workout",
-                tint = RestLockPalette.TextMid,
-            )
-        }
         IconButton(
             onClick = onStart,
             enabled = !sessionActive && workout.exercises.isNotEmpty() &&
@@ -288,6 +331,24 @@ private fun SavedWorkoutRow(
                 contentDescription = "Start ${workout.name}",
                 tint = RestLockPalette.Mint,
             )
+        }
+        Box {
+            IconButton(onClick = { menuExpanded = true }) {
+                Icon(Icons.Rounded.MoreVert, contentDescription = "Actions for ${workout.name}", tint = RestLockPalette.TextMid)
+            }
+            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Edit") },
+                    leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                    enabled = !sessionActive,
+                    onClick = { menuExpanded = false; onEdit() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = { menuExpanded = false; onDelete() },
+                )
+            }
         }
     }
 }
@@ -372,6 +433,7 @@ private fun WorkoutBuilder(
                 onValueChange = onNameChange,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                enabled = !state.isSaving,
                 label = { Text("Workout name") },
             )
 
@@ -381,6 +443,7 @@ private fun WorkoutBuilder(
                 onSetExerciseReps = onSetExerciseReps,
                 onMoveExerciseUp = onMoveExerciseUp,
                 onMoveExerciseDown = onMoveExerciseDown,
+                onRemoveExercise = onToggleExercise,
             )
 
             MuscleGroupPicker(
@@ -401,10 +464,10 @@ private fun WorkoutBuilder(
             }
 
             PrimaryAction(
-                label = if (state.isEditingWorkout) "Save changes" else "Save workout",
+                label = if (state.isSaving) "Saving..." else if (state.isEditingWorkout) "Save changes" else "Save workout",
                 onClick = onSaveWorkout,
                 leadingIcon = Icons.Rounded.Check,
-                enabled = state.selectedExercises.isNotEmpty(),
+                enabled = state.selectedExercises.isNotEmpty() && !state.isSaving,
                 brush = PrimaryBrush,
             )
         }
@@ -418,6 +481,7 @@ private fun SelectedExercisePlan(
     onSetExerciseReps: (String, Int) -> Unit,
     onMoveExerciseUp: (String) -> Unit,
     onMoveExerciseDown: (String) -> Unit,
+    onRemoveExercise: (String) -> Unit,
 ) {
     if (selectedExercises.isEmpty()) {
         Text(
@@ -443,6 +507,7 @@ private fun SelectedExercisePlan(
                 onSetExerciseReps = onSetExerciseReps,
                 onMoveExerciseUp = onMoveExerciseUp,
                 onMoveExerciseDown = onMoveExerciseDown,
+                onRemoveExercise = onRemoveExercise,
             )
         }
     }
@@ -457,6 +522,7 @@ private fun SelectedExerciseRow(
     onSetExerciseReps: (String, Int) -> Unit,
     onMoveExerciseUp: (String) -> Unit,
     onMoveExerciseDown: (String) -> Unit,
+    onRemoveExercise: (String) -> Unit,
 ) {
     val exerciseId = item.definition.id
 
@@ -545,6 +611,9 @@ private fun SelectedExerciseRow(
                 onIncrease = { onSetExerciseReps(exerciseId, item.plan.reps + 1) },
                 modifier = Modifier.weight(1f),
             )
+        }
+        TextButton(onClick = { onRemoveExercise(exerciseId) }) {
+            Text("Remove exercise", color = RestLockPalette.TextMid)
         }
     }
 }

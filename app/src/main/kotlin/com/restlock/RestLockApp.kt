@@ -47,7 +47,7 @@ class RestLockApp : RestLockApplication() {
         val controller = RestLockBackend.controller(this)
         permissionGateway = RestLockBackend.permissions(this)
         settingsRepository = BackendSettingsRepository(controller)
-        fitnessRepository = BackendFitnessRepository(this)
+        fitnessRepository = BackendFitnessRepository(this) { controller.activeWorkout()?.workoutId }
         installedAppsProvider = BackendInstalledAppsProvider(
             RestLockBackend.installedApps(this),
         )
