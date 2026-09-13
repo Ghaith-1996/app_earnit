@@ -65,6 +65,12 @@ class HomeViewModel(
     private val refreshPermissionsPeriodically: Boolean = true,
 ) : ViewModel() {
     private val permissions = MutableStateFlow(permissionGateway.currentStatus().toHomeState())
+    val pendingWorkoutSummary = fitnessRepository.pendingWorkoutSummary
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun dismissWorkoutSummary() {
+        viewModelScope.launch { fitnessRepository.dismissWorkoutSummary() }
+    }
 
     private val baseState = combine(
         sessionEngine.state,
@@ -146,8 +152,8 @@ class HomeViewModel(
 
     fun addThirtySeconds() = sessionEngine.addThirtySeconds()
     fun exerciseDone() = sessionEngine.exerciseDone()
-    fun finishWorkout() {
-        sessionEngine.finishWorkout()
+    fun finishWorkout(onFinished: (WorkoutLog?) -> Unit = {}) {
+        sessionEngine.finishWorkout(onFinished)
     }
 
     fun refreshPermissions() {

@@ -102,7 +102,6 @@ fun WorkoutScreen(
                     onMoveExerciseUp = viewModel::moveExerciseUp,
                     onMoveExerciseDown = viewModel::moveExerciseDown,
                     onSaveWorkout = viewModel::saveWorkout,
-                    onLogWorkout = viewModel::logBuilderWorkout,
                     onClose = viewModel::closeBuilder,
                 )
             } else {
@@ -336,7 +335,6 @@ private fun WorkoutBuilder(
     onMoveExerciseUp: (String) -> Unit,
     onMoveExerciseDown: (String) -> Unit,
     onSaveWorkout: () -> Unit,
-    onLogWorkout: () -> Unit,
     onClose: () -> Unit,
 ) {
     val selectedIds = state.selectedExercises.map { it.definition.id }.toSet()
@@ -408,12 +406,6 @@ private fun WorkoutBuilder(
                 leadingIcon = Icons.Rounded.Check,
                 enabled = state.selectedExercises.isNotEmpty(),
                 brush = PrimaryBrush,
-            )
-            SecondaryAction(
-                label = "Log now",
-                onClick = onLogWorkout,
-                leadingIcon = Icons.Rounded.PlayArrow,
-                enabled = state.selectedExercises.isNotEmpty(),
             )
         }
     }

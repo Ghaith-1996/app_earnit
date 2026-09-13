@@ -1,6 +1,7 @@
 package com.restlock.domain.backend
 
 import com.fitness.restlock.backend.WorkoutController
+import com.fitness.restlock.backend.WorkoutCompletion
 import com.fitness.restlock.backend.WorkoutMode
 import com.fitness.restlock.backend.WorkoutState
 import com.restlock.domain.SessionEngine
@@ -8,6 +9,8 @@ import com.restlock.domain.SessionState
 import com.restlock.domain.FitnessRepository
 import com.restlock.domain.PlannedWorkout
 import com.restlock.domain.ExerciseCatalog
+import com.restlock.domain.ActiveWorkoutSession
+import com.restlock.domain.WorkoutLog
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -30,6 +33,10 @@ class BackendSessionEngine(
     private val commands = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
     init {
+        commands.trySend {
+            restoreActiveWorkout()
+            controller.pendingCompletion()?.let { clearFinishedWorkout(it) }
+        }
         scope.launch {
             for (command in commands) {
                 // A storage failure must not disable every subsequent session command.
@@ -50,15 +57,18 @@ class BackendSessionEngine(
 
     override fun startWorkout(rest: Duration, workout: PlannedWorkout?) {
         commands.trySend {
+            controller.pendingCompletion()?.let { clearFinishedWorkout(it) }
+            if (controller.pendingCompletion() != null) return@trySend
             val saved = if (workout == null) null else {
                 fitnessRepository.savedWorkouts.first().firstOrNull { it.id == workout.id }
                     ?: return@trySend
             }
             if (saved != null && (saved.exercises.isEmpty() ||
                     saved.exercises.any { ExerciseCatalog.byId(it.exerciseId) == null })) return@trySend
-            if (controller.startWorkout(rest.inWholeSeconds.toInt(), saved?.totalSets)) {
+            if (controller.startWorkout(rest.inWholeSeconds.toInt(), saved?.totalSets, saved?.id)) {
                 try {
-                    fitnessRepository.setActiveWorkoutId(saved?.id)
+                    val active = controller.activeWorkout()
+                    fitnessRepository.setActiveWorkoutSession(active?.let { ActiveWorkoutSession(it.workoutId, it.startedAtMillis) })
                 } catch (error: Exception) {
                     controller.finishWorkout()
                     throw error
@@ -71,28 +81,42 @@ class BackendSessionEngine(
         commands.trySend { controller.addThirtySecondsRest() }
     }
 
-    override fun exerciseDone() {
+    override fun exerciseDone(onFinished: (WorkoutLog?) -> Unit) {
         commands.trySend {
-            if (controller.exerciseDone()) clearFinishedWorkout()
+            controller.exerciseDone()?.let { completion ->
+                val log = clearFinishedWorkout(completion)
+                withContext(Dispatchers.Main.immediate) { onFinished(log) }
+            }
         }
     }
 
-    override fun finishWorkout(onFinished: () -> Unit) {
+    override fun finishWorkout(onFinished: (WorkoutLog?) -> Unit) {
         commands.trySend {
             // End blocking and cancel the alarm before optional existing logging.
-            controller.finishWorkout()
-            clearFinishedWorkout()
-            withContext(Dispatchers.Main.immediate) { onFinished() }
+            val completion = controller.finishWorkout()
+            val log = clearFinishedWorkout(completion)
+            withContext(Dispatchers.Main.immediate) { onFinished(log) }
         }
     }
 
-    private suspend fun clearFinishedWorkout() {
-        try {
-            fitnessRepository.logActiveWorkoutAndClear(System.currentTimeMillis())
+    private suspend fun restoreActiveWorkout() {
+        // The backend commits this identity with the start transition. Only restore while
+        // running: after a finish, a cleared fitness ID means the result was already saved.
+        controller.activeWorkout()?.let {
+            fitnessRepository.setActiveWorkoutSession(ActiveWorkoutSession(it.workoutId, it.startedAtMillis))
+        }
+    }
+
+    private suspend fun clearFinishedWorkout(completion: WorkoutCompletion): WorkoutLog? {
+        return try {
+            val log = fitnessRepository.logActiveWorkoutAndClear(completion.completedAtMillis, completion.completedSets)
+            controller.acknowledgeCompletion()
+            log
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            fitnessRepository.setActiveWorkoutId(null)
+            // Keep the persisted receipt and selection for a retry; blocking has already ended.
+            null
         }
     }
 

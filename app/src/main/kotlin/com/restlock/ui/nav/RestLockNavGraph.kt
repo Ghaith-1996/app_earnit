@@ -1,6 +1,7 @@
 package com.restlock.ui.nav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -35,6 +36,10 @@ fun RestLockNavGraph(
 ) {
     val homeViewModel: HomeViewModel = viewModel(factory = factory)
     val homeState by homeViewModel.uiState.collectAsState()
+    val pendingSummary by homeViewModel.pendingWorkoutSummary.collectAsState()
+    LaunchedEffect(pendingSummary) {
+        if (pendingSummary != null) navController.navigateTopLevel(Routes.Home)
+    }
     NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.Home) {
             HomeScreen(

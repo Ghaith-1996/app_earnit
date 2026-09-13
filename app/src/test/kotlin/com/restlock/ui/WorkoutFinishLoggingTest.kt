@@ -13,6 +13,7 @@ import com.fitness.restlock.backend.session.DefaultWorkoutController
 import com.google.common.truth.Truth.assertThat
 import com.restlock.domain.*
 import com.restlock.domain.backend.BackendSessionEngine
+import com.restlock.domain.backend.BackendFitnessRepository
 import com.restlock.domain.fake.FakeSettingsRepository
 import java.io.File
 import kotlinx.coroutines.*
@@ -29,6 +30,109 @@ import kotlin.time.Duration.Companion.seconds
 class WorkoutFinishLoggingTest {
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
     @get:Rule val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun `process death between backend start and fitness metadata write restores original identity`() = runTest {
+        val f = fixture()
+        runCurrent()
+        advanceTimeBy(1_000)
+        f.controller.startWorkout(5, 3, "legs")
+        assertThat(f.repository.activeWorkoutSession.value).isNull()
+        f.sessionJob.cancelAndJoin()
+        f.storageJob.cancelAndJoin()
+        advanceTimeBy(60_000)
+        val restored = fixture(file = f.file, repository = f.repository)
+        runCurrent()
+        assertThat(restored.repository.activeWorkoutSession.value).isEqualTo(ActiveWorkoutSession("legs", 1_000L))
+        restored.home.finishWorkout()
+        runCurrent()
+        assertThat(restored.repository.workoutLogs.value.single().durationMinutes).isEqualTo(1)
+    }
+
+    @Test
+    fun `both stores reopen mid workout and retain original start for a 42 minute result`() = runTest {
+        val sessionFile = File(temporaryFolder.newFolder(), "session.preferences_pb")
+        val fitnessFile = File(temporaryFolder.newFolder(), "fitness.preferences_pb")
+        val jobs = mutableListOf<Job>()
+        fun open(): Pair<BackendSessionEngine, BackendFitnessRepository> {
+            val job = SupervisorJob(backgroundScope.coroutineContext[Job]).also(jobs::add)
+            val scope = CoroutineScope(backgroundScope.coroutineContext + job)
+            val store = WorkoutPreferencesStore(PreferenceDataStoreFactory.create(scope = scope) { sessionFile })
+            val repository = BackendFitnessRepository(PreferenceDataStoreFactory.create(scope = scope) { fitnessFile })
+            val controller = DefaultWorkoutController(
+                store, RecordingAlarm(), TestPermissions(), StaticAppBlockPolicy(emptySet()), scope,
+                object : Clock { override fun nowMillis() = testScheduler.currentTime },
+            )
+            return BackendSessionEngine(controller, repository, scope) to repository
+        }
+        advanceTimeBy(1_000)
+        val (engine, repository) = open()
+        repository.saveWorkout(workout())
+        engine.startWorkout(5.seconds, workout())
+        runCurrent()
+        repeat(2) {
+            advanceTimeBy(5_000)
+            runCurrent()
+            engine.exerciseDone()
+            runCurrent()
+        }
+        jobs.last().cancelAndJoin()
+        advanceTimeBy(2_510_000)
+        val (restoredEngine, restoredRepository) = open()
+        runCurrent()
+        assertThat(restoredEngine.state.value.setsCompleted).isEqualTo(2)
+        assertThat(restoredEngine.state.value.isFinalSet).isTrue()
+        assertThat(restoredRepository.activeWorkoutSession.first()?.startedAtMillis).isEqualTo(1_000L)
+        var delivered: WorkoutLog? = null
+        restoredEngine.exerciseDone { delivered = it }
+        runCurrent()
+        val log = restoredRepository.workoutLogs.first().single()
+        assertThat(log).isEqualTo(delivered)
+        assertThat(restoredRepository.pendingWorkoutSummary.first()).isEqualTo(log)
+        assertThat(log.startedAtMillis).isEqualTo(1_000L)
+        assertThat(log.completedAtMillis).isEqualTo(2_521_000L)
+        assertThat(log.durationMinutes).isEqualTo(42)
+        assertThat(log.completedSets).isEqualTo(3)
+        assertThat(log.completedFully).isTrue()
+    }
+
+    @Test
+    fun `manual finish returns persisted partial result before counters are reset`() = runTest {
+        val f = fixture()
+        f.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        f.home.exerciseDone()
+        runCurrent()
+        var result: WorkoutLog? = null
+        f.blocker.finishWorkout { result = it }
+        f.home.finishWorkout()
+        runCurrent()
+        assertFinished(f)
+        assertThat(result).isEqualTo(f.repository.workoutLogs.value.single())
+        assertThat(result!!.completedSets).isEqualTo(1)
+        assertThat(result!!.plannedSets).isEqualTo(3)
+        assertThat(result!!.completedFully).isFalse()
+        assertThat(result!!.startedAtMillis).isEqualTo(0L)
+        assertThat(result!!.completedAtMillis).isEqualTo(5_000L)
+    }
+
+    @Test
+    fun `final set callback includes the final set and the persisted summary`() = runTest {
+        val f = fixture(workout(sets = 1, secondExercise = false))
+        f.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        var result: WorkoutLog? = null
+        f.blocker.exerciseDone { result = it }
+        runCurrent()
+        assertThat(result!!.completedSets).isEqualTo(1)
+        assertThat(result!!.completedFully).isTrue()
+        assertThat(f.repository.pendingWorkoutSummary.value).isEqualTo(result)
+        assertFinished(f)
+    }
 
     @Test
     fun `saved launch works before Home UI subscribes and does not log a completion`() = runTest {
@@ -250,7 +354,7 @@ class WorkoutFinishLoggingTest {
     }
 
     @Test
-    fun `logging failure still ends final set clears selection and allows another session`() = runTest {
+    fun `logging failure unlocks and retains a recoverable completion after process death`() = runTest {
         val f = fixture(workout(sets = 1, secondExercise = false))
         f.repository.failLogging = true
         f.home.startSavedWorkout("legs", 5.seconds)
@@ -259,16 +363,28 @@ class WorkoutFinishLoggingTest {
         runCurrent()
         f.blocker.exerciseDone()
         runCurrent()
-        assertFinished(f)
-        f.home.startWorkout(5.seconds)
+        assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Idle)
+        assertThat(f.engine.state.value.blockerArmed).isFalse()
+        assertThat(f.alarm.deadline).isNull()
+        assertThat(f.store.snapshots.first().pendingCompletion!!.completedSets).isEqualTo(1)
+        f.sessionJob.cancelAndJoin()
+        f.storageJob.cancelAndJoin()
+        advanceTimeBy(60_000)
+        f.repository.failLogging = false
+        val restored = fixture(file = f.file, repository = f.repository)
         runCurrent()
-        assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Resting)
+        assertFinished(restored)
+        assertThat(f.repository.workoutLogs.value.single().completedAtMillis).isEqualTo(5_000L)
+        assertThat(f.repository.workoutLogs.value.single().completedSets).isEqualTo(1)
+        restored.home.startWorkout(5.seconds)
+        runCurrent()
+        assertThat(restored.engine.state.value.phase).isEqualTo(SessionState.Phase.Resting)
     }
 
     @Test
     fun `finish clears a missing active workout without logging`() = runTest {
         val f = fixture()
-        f.repository.setActiveWorkoutId("deleted")
+        f.repository.setActiveWorkoutSession(ActiveWorkoutSession("deleted", null))
         f.blocker.finishWorkout()
         runCurrent()
         assertFinished(f)
@@ -316,7 +432,7 @@ class WorkoutFinishLoggingTest {
         val engine = BackendSessionEngine(controller, repository, sessionScope)
         val home = HomeViewModel(engine, FakeSettingsRepository(), repository, permissions, false)
         return Fixture(repository, engine, home, BlockerViewModel(engine, repository), alarm,
-            store, file, sessionJob, storageJob)
+            store, file, sessionJob, storageJob, controller)
     }
 
     private fun workout(sets: Int = 2, secondExercise: Boolean = true) = PlannedWorkout(
@@ -331,6 +447,7 @@ class WorkoutFinishLoggingTest {
         val repository: MemoryFitnessRepository, val engine: BackendSessionEngine,
         val home: HomeViewModel, val blocker: BlockerViewModel, val alarm: RecordingAlarm,
         val store: WorkoutPreferencesStore, val file: File, val sessionJob: Job, val storageJob: Job,
+        val controller: DefaultWorkoutController,
     )
 }
 
@@ -354,20 +471,29 @@ private class MemoryFitnessRepository : FitnessRepository {
     override val savedWorkouts = MutableStateFlow<List<PlannedWorkout>>(emptyList())
     override val workoutLogs = MutableStateFlow<List<WorkoutLog>>(emptyList())
     override val activeWorkoutId = MutableStateFlow<String?>(null)
+    override val activeWorkoutSession = MutableStateFlow<ActiveWorkoutSession?>(null)
+    override val pendingWorkoutSummary = MutableStateFlow<WorkoutLog?>(null)
     override suspend fun saveUserProfile(profile: UserProfile) { userProfile.value = profile }
     override suspend fun saveWorkout(workout: PlannedWorkout) {
         savedWorkouts.value = listOf(workout) + savedWorkouts.value.filterNot { it.id == workout.id }
     }
-    override suspend fun setActiveWorkoutId(workoutId: String?) { activeWorkoutId.value = workoutId }
+    override suspend fun setActiveWorkoutSession(session: ActiveWorkoutSession?) {
+        activeWorkoutSession.value = session
+        activeWorkoutId.value = session?.workoutId
+    }
+    override suspend fun dismissWorkoutSummary() { pendingWorkoutSummary.value = null }
     override suspend fun logWorkout(log: WorkoutLog) { workoutLogs.value = listOf(log) + workoutLogs.value }
-    override suspend fun logActiveWorkoutAndClear(completedAtMillis: Long): Boolean {
+    override suspend fun logActiveWorkoutAndClear(completedAtMillis: Long, completedSets: Int): WorkoutLog? {
         delay(logDelayMillis)
         if (failLogging) throw java.io.IOException("Storage unavailable")
         val workout = savedWorkouts.value.firstOrNull { it.id == activeWorkoutId.value }
-        activeWorkoutId.value = null
-        if (workout == null) return false
-        logWorkout(WorkoutLog(workout.name, completedAtMillis, 1, 0, workout.exercises.size))
-        return true
+        val session = activeWorkoutSession.value
+        setActiveWorkoutSession(null)
+        if (workout == null || session == null) return null
+        val log = WorkoutResults.createLog(workout, session, completedSets, completedAtMillis, userProfile.value)
+        logWorkout(log)
+        pendingWorkoutSummary.value = log
+        return log
     }
 }
 

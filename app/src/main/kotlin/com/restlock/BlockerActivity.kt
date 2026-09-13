@@ -1,5 +1,6 @@
 package com.restlock
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -9,12 +10,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.restlock.ads.CreatorSupportRewardedAd
 import com.restlock.domain.SessionState
 import com.restlock.ui.BlockerViewModel
+import com.restlock.ui.BlockerCompletion
 import com.restlock.ui.RestLockViewModelFactory
 import com.restlock.ui.screens.BlockerScreen
 import com.restlock.ui.screens.SupportCreatorDialog
@@ -25,8 +27,8 @@ import com.restlock.ui.theme.RestLockTheme
  * [SessionState.Phase.AwaitingDecision].
  *
  * The real backend launches this activity from its AccessibilityService.
- * The activity finishes itself as soon as the session leaves AwaitingDecision
- * (the user chose Exercise Done, +30s, or Finish).
+ * Rest choices dismiss immediately. Finishing waits for the saved result before
+ * handing off to Home, where the persisted summary is displayed.
  */
 class BlockerActivity : ComponentActivity() {
 
@@ -51,13 +53,20 @@ class BlockerActivity : ComponentActivity() {
                 val vm: BlockerViewModel = viewModel(factory = factory)
                 val state by vm.sessionState.collectAsState()
                 val preview by vm.activeExercisePreview.collectAsState()
-                var supportDialogOpen by remember { mutableStateOf(false) }
+                val completion by vm.completion.collectAsState()
+                val pendingSummary by vm.pendingWorkoutSummary.collectAsState()
+                var supportDialogOpen by rememberSaveable { mutableStateOf(false) }
 
-                LaunchedEffect(state.phase) {
-                    if (state.phase != SessionState.Phase.AwaitingDecision) {
-                        // The user resolved the lock elsewhere (or the session ended);
-                        // dismiss ourselves so the user is back where they were.
-                        finish()
+                LaunchedEffect(state.phase, completion, pendingSummary) {
+                    val result = completion
+                    when {
+                        state.phase == SessionState.Phase.Resting -> finish()
+                        state.phase == SessionState.Phase.Idle && pendingSummary != null -> openWorkoutSummary()
+                        result is BlockerCompletion.Finished -> {
+                            if (result.log != null) openWorkoutSummary() else supportDialogOpen = true
+                        }
+                        result == BlockerCompletion.Saving -> Unit
+                        state.phase != SessionState.Phase.AwaitingDecision -> finish()
                     }
                 }
 
@@ -75,31 +84,34 @@ class BlockerActivity : ComponentActivity() {
                             vm.addThirtySeconds()
                         },
                         onFinishWorkout = {
-                            supportDialogOpen = true
+                            vm.finishWorkout()
                         },
                     )
+                }
 
-                    if (supportDialogOpen) {
-                        SupportCreatorDialog(
-                            onWatchAd = {
-                                supportDialogOpen = false
-                                CreatorSupportRewardedAd.showOrContinue(this@BlockerActivity) {
-                                    vm.finishWorkout {
-                                        finish()
-                                    }
-                                }
-                            },
-                            onNoThanks = {
-                                supportDialogOpen = false
-                                vm.finishWorkout {
-                                    finish()
-                                }
-                            },
-                        )
-                    }
+                // Quick start has no structured log. Its session is already over,
+                // and declining, dismissing, or failing the ad always allows exit.
+                if (supportDialogOpen) {
+                    SupportCreatorDialog(
+                        onWatchAd = {
+                            supportDialogOpen = false
+                            CreatorSupportRewardedAd.showOrContinue(this@BlockerActivity) { finish() }
+                        },
+                        onNoThanks = {
+                            supportDialogOpen = false
+                            finish()
+                        },
+                    )
                 }
             }
         }
+    }
+
+    private fun openWorkoutSummary() {
+        startActivity(Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        })
+        finish()
     }
 
     private fun configureShowWhenLocked() {

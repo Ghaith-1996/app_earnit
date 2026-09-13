@@ -47,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,10 +91,11 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
+    val pendingSummary by viewModel.pendingWorkoutSummary.collectAsState()
     val context = LocalContext.current
     var setupOpen by remember { mutableStateOf(false) }
     var workoutChooserOpen by remember { mutableStateOf(false) }
-    var supportDialogOpen by remember { mutableStateOf(false) }
+    var supportDialogOpen by rememberSaveable { mutableStateOf(false) }
     val openRestSetup = { setupOpen = true }
     val openWorkoutLaunch = {
         if (state.savedWorkouts.isEmpty()) {
@@ -159,7 +161,11 @@ fun HomeScreen(
                     onStart = openWorkoutLaunch,
                     onAddThirty = viewModel::addThirtySeconds,
                     onExerciseDone = viewModel::exerciseDone,
-                    onFinish = { supportDialogOpen = true },
+                    onFinish = {
+                        viewModel.finishWorkout { log ->
+                            if (log == null) supportDialogOpen = true
+                        }
+                    },
                     onOpenAppPicker = onOpenAppPicker,
                 )
             }
@@ -203,22 +209,28 @@ fun HomeScreen(
             )
         }
 
-        if (supportDialogOpen) {
+        pendingSummary?.let { summary ->
+            WorkoutSummaryDialog(
+                log = summary,
+                onDismiss = viewModel::dismissWorkoutSummary,
+                onSupportCreator = {
+                    viewModel.dismissWorkoutSummary()
+                    supportDialogOpen = true
+                },
+            )
+        }
+
+        if (supportDialogOpen && pendingSummary == null) {
             SupportCreatorDialog(
                 onWatchAd = {
                     supportDialogOpen = false
                     val activity = context.findActivity()
-                    if (activity == null) {
-                        viewModel.finishWorkout()
-                    } else {
-                        CreatorSupportRewardedAd.showOrContinue(activity) {
-                            viewModel.finishWorkout()
-                        }
+                    if (activity != null) {
+                        CreatorSupportRewardedAd.showOrContinue(activity) {}
                     }
                 },
                 onNoThanks = {
                     supportDialogOpen = false
-                    viewModel.finishWorkout()
                 },
             )
         }
@@ -510,7 +522,12 @@ private fun RecentWorkoutRow(log: WorkoutLog) {
                 color = RestLockPalette.TextHigh,
             )
             Text(
-                text = "${formatWorkoutDate(log.completedAtMillis)} - ${log.exerciseCount} exercises - ${log.durationMinutes} min",
+                text = "${formatWorkoutDate(log.completedAtMillis)} · ${log.durationLabel()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = RestLockPalette.TextLow,
+            )
+            Text(
+                text = "${log.setsLabel()} · ${log.completionLabel()}",
                 style = MaterialTheme.typography.bodySmall,
                 color = RestLockPalette.TextLow,
             )

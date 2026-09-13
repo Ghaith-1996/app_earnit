@@ -12,6 +12,8 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.fitness.restlock.backend.WorkoutMode
 import com.fitness.restlock.backend.WorkoutState
+import com.fitness.restlock.backend.WorkoutCompletion
+import com.fitness.restlock.backend.WorkoutStart
 import com.fitness.restlock.backend.session.WorkoutSessionSnapshot
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -51,6 +53,22 @@ class WorkoutPreferencesStore(private val dataStore: DataStore<Preferences>) {
             val plannedSets = nextSnapshot.plannedSets
             if (plannedSets == null) preferences.remove(Keys.plannedSets)
             else preferences[Keys.plannedSets] = plannedSets
+            val active = nextSnapshot.activeWorkout
+            if (active == null) {
+                preferences.remove(Keys.activeWorkoutId)
+                preferences.remove(Keys.startedAtMillis)
+            } else {
+                preferences[Keys.activeWorkoutId] = active.workoutId
+                preferences[Keys.startedAtMillis] = active.startedAtMillis
+            }
+            val completion = nextSnapshot.pendingCompletion
+            if (completion == null) {
+                preferences.remove(Keys.completionSets)
+                preferences.remove(Keys.completionTime)
+            } else {
+                preferences[Keys.completionSets] = completion.completedSets
+                preferences[Keys.completionTime] = completion.completedAtMillis
+            }
         }
         return nextSnapshot
     }
@@ -67,6 +85,12 @@ class WorkoutPreferencesStore(private val dataStore: DataStore<Preferences>) {
             completedSets = this[Keys.completedSets] ?: 0,
             extraRests = this[Keys.extraRests] ?: 0,
             plannedSets = this[Keys.plannedSets]?.takeIf { it > 0 },
+            activeWorkout = this[Keys.activeWorkoutId]?.let { id ->
+                this[Keys.startedAtMillis]?.let { WorkoutStart(id, it) }
+            },
+            pendingCompletion = this[Keys.completionTime]?.let { time ->
+                this[Keys.completionSets]?.let { WorkoutCompletion(it, time) }
+            },
         )
     }
 
@@ -78,5 +102,9 @@ class WorkoutPreferencesStore(private val dataStore: DataStore<Preferences>) {
         val completedSets = intPreferencesKey("completed_sets")
         val extraRests = intPreferencesKey("extra_rests")
         val plannedSets = intPreferencesKey("planned_sets")
+        val activeWorkoutId = stringPreferencesKey("active_workout_id")
+        val startedAtMillis = longPreferencesKey("workout_started_at_millis")
+        val completionSets = intPreferencesKey("completion_sets")
+        val completionTime = longPreferencesKey("completion_time")
     }
 }

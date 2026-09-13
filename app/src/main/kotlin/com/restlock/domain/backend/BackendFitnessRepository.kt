@@ -1,23 +1,26 @@
 package com.restlock.domain.backend
 
 import android.content.Context
-import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.restlock.domain.FitnessCalculator
+import com.restlock.domain.ActiveWorkoutSession
 import com.restlock.domain.FitnessRepository
 import com.restlock.domain.PlannedExercise
 import com.restlock.domain.PlannedWorkout
 import com.restlock.domain.UserProfile
 import com.restlock.domain.UserSex
 import com.restlock.domain.WorkoutLog
+import com.restlock.domain.WorkoutResults
 import java.io.IOException
+import java.net.URLDecoder
+import java.net.URLEncoder
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -26,8 +29,8 @@ private val Context.fitnessDataStore: DataStore<Preferences> by preferencesDataS
     name = "fitness_repository",
 )
 
-class BackendFitnessRepository(context: Context) : FitnessRepository {
-    private val dataStore = context.applicationContext.fitnessDataStore
+class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : FitnessRepository {
+    constructor(context: Context) : this(context.applicationContext.fitnessDataStore)
 
     private val safeData: Flow<Preferences> = dataStore.data
         .catch { throwable ->
@@ -50,8 +53,12 @@ class BackendFitnessRepository(context: Context) : FitnessRepository {
         decodeLogs(preferences[Keys.workoutLogs].orEmpty())
     }
 
-    override val activeWorkoutId: Flow<String?> = safeData.map { preferences ->
-        preferences[Keys.activeWorkoutId]
+    override val activeWorkoutSession: Flow<ActiveWorkoutSession?> = safeData.map { preferences ->
+        preferences.toActiveWorkoutSession()
+    }
+
+    override val pendingWorkoutSummary: Flow<WorkoutLog?> = safeData.map { preferences ->
+        preferences[Keys.pendingWorkoutSummary]?.let(::decodeLog)
     }
 
     override suspend fun saveUserProfile(profile: UserProfile) {
@@ -87,50 +94,56 @@ class BackendFitnessRepository(context: Context) : FitnessRepository {
         }
     }
 
-    override suspend fun setActiveWorkoutId(workoutId: String?) {
+    override suspend fun setActiveWorkoutSession(session: ActiveWorkoutSession?) {
         dataStore.edit { preferences ->
-            if (workoutId.isNullOrBlank()) {
+            if (session == null || session.workoutId.isBlank()) {
                 preferences.remove(Keys.activeWorkoutId)
+                preferences.remove(Keys.activeWorkoutStartedAtMillis)
             } else {
-                preferences[Keys.activeWorkoutId] = workoutId
+                preferences[Keys.activeWorkoutId] = session.workoutId
+                val startedAt = session.startedAtMillis
+                if (startedAt == null) preferences.remove(Keys.activeWorkoutStartedAtMillis)
+                else preferences[Keys.activeWorkoutStartedAtMillis] = startedAt
             }
         }
     }
 
-    override suspend fun logActiveWorkoutAndClear(completedAtMillis: Long): Boolean {
-        var logged = false
+    override suspend fun logActiveWorkoutAndClear(completedAtMillis: Long, completedSets: Int): WorkoutLog? {
+        var result: WorkoutLog? = null
         dataStore.edit { preferences ->
-            val workoutId = preferences[Keys.activeWorkoutId]
-            if (workoutId.isNullOrBlank()) {
-                preferences.remove(Keys.activeWorkoutId)
-                return@edit
-            }
-
+            val session = preferences.toActiveWorkoutSession()
+            // Clearing belongs to the same transaction as the log, including missing legacy IDs.
+            preferences.remove(Keys.activeWorkoutId)
+            preferences.remove(Keys.activeWorkoutStartedAtMillis)
+            if (session == null) return@edit
             val workout = decodeWorkouts(preferences[Keys.savedWorkouts].orEmpty())
-                .firstOrNull { it.id == workoutId }
-            if (workout == null) {
-                preferences.remove(Keys.activeWorkoutId)
-                return@edit
-            }
+                .firstOrNull { it.id == session.workoutId } ?: return@edit
+            if (workout.totalSets == 0) return@edit
 
-            val log = WorkoutLog(
-                name = workout.name,
+            val log = WorkoutResults.createLog(
+                workout = workout,
+                session = session,
+                completedSets = completedSets,
                 completedAtMillis = completedAtMillis,
-                durationMinutes = FitnessCalculator.durationForPlannedExercises(workout.exercises),
-                calories = FitnessCalculator.caloriesForPlannedExercises(
-                    exercises = workout.exercises,
-                    profile = preferences.toUserProfile(),
-                ),
-                exerciseCount = workout.exerciseIds.size,
+                profile = preferences.toUserProfile(),
             )
             val currentLogs = decodeLogs(preferences[Keys.workoutLogs].orEmpty())
             preferences[Keys.workoutLogs] = (listOf(log) + currentLogs)
                 .take(MaxWorkoutLogs)
                 .joinToString(RecordSeparator, transform = ::encodeLog)
-            preferences.remove(Keys.activeWorkoutId)
-            logged = true
+            preferences[Keys.pendingWorkoutSummary] = encodeLog(log)
+            result = log
         }
-        return logged
+        return result
+    }
+
+    override suspend fun dismissWorkoutSummary() {
+        dataStore.edit { it.remove(Keys.pendingWorkoutSummary) }
+    }
+
+    private fun Preferences.toActiveWorkoutSession(): ActiveWorkoutSession? {
+        val workoutId = this[Keys.activeWorkoutId]?.takeIf { it.isNotBlank() } ?: return null
+        return ActiveWorkoutSession(workoutId, this[Keys.activeWorkoutStartedAtMillis])
     }
 
     private fun Preferences.toUserProfile(): UserProfile {
@@ -225,27 +238,38 @@ class BackendFitnessRepository(context: Context) : FitnessRepository {
             LogVersion,
             log.completedAtMillis.toString(),
             encode(log.name),
-            log.durationMinutes.toString(),
+            log.durationMinutes?.toString().orEmpty(),
             log.calories.toString(),
             log.exerciseCount.toString(),
+            log.startedAtMillis?.toString().orEmpty(),
+            log.completedSets?.toString().orEmpty(),
+            log.plannedSets?.toString().orEmpty(),
         ).joinToString(FieldSeparator)
     }
 
     private fun decodeLog(raw: String): WorkoutLog? {
-        val parts = raw.split(FieldSeparator, limit = 6)
-        if (parts.size != 6 || parts[0] != LogVersion) return null
+        val parts = raw.split(FieldSeparator)
+        val legacy = parts.firstOrNull() == LegacyLogVersion
+        if (legacy && parts.size != 6) return null
+        if (!legacy && (parts.firstOrNull() != LogVersion || parts.size != 9)) return null
         return WorkoutLog(
             completedAtMillis = parts[1].toLongOrNull() ?: return null,
             name = decode(parts[2]).ifBlank { "Workout" },
-            durationMinutes = parts[3].toIntOrNull() ?: return null,
+            durationMinutes = if (parts[3].isEmpty() && !legacy) null else parts[3].toIntOrNull() ?: return null,
             calories = parts[4].toIntOrNull() ?: return null,
             exerciseCount = parts[5].toIntOrNull() ?: return null,
+            startedAtMillis = parts.getOrNull(6)?.toLongOrNull(),
+            completedSets = parts.getOrNull(7)?.toIntOrNull(),
+            plannedSets = parts.getOrNull(8)?.toIntOrNull(),
         )
     }
 
-    private fun encode(value: String): String = Uri.encode(value)
+    private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
-    private fun decode(value: String): String = Uri.decode(value)
+    // Uri used percent encoding, not form encoding: legacy literal plus signs must survive.
+    private fun decode(value: String): String = runCatching {
+        URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
+    }.getOrDefault(value)
 
     private object Keys {
         val ageYears = intPreferencesKey("age_years")
@@ -255,12 +279,15 @@ class BackendFitnessRepository(context: Context) : FitnessRepository {
         val savedWorkouts = stringPreferencesKey("saved_workouts")
         val workoutLogs = stringPreferencesKey("workout_logs")
         val activeWorkoutId = stringPreferencesKey("active_workout_id")
+        val activeWorkoutStartedAtMillis = longPreferencesKey("active_workout_started_at_millis")
+        val pendingWorkoutSummary = stringPreferencesKey("pending_workout_summary")
     }
 
     private companion object {
         const val WorkoutVersion = "workout-v2"
         const val LegacyWorkoutVersion = "workout-v1"
-        const val LogVersion = "log-v1"
+        const val LogVersion = "log-v2"
+        const val LegacyLogVersion = "log-v1"
         const val FieldSeparator = "|"
         const val ExerciseSeparator = ","
         const val ExerciseFieldSeparator = ":"

@@ -32,6 +32,7 @@ interface SessionEngine {
     /** A saved plan starts at set 1; null starts an open-ended quick session. Active sessions are preserved. */
     fun startWorkout(rest: Duration, workout: PlannedWorkout? = null)
     fun addThirtySeconds()
-    fun exerciseDone()
-    fun finishWorkout(onFinished: () -> Unit = {})
+    /** The callback runs only on final-set completion, with the saved result if available. */
+    fun exerciseDone(onFinished: (WorkoutLog?) -> Unit = {})
+    fun finishWorkout(onFinished: (WorkoutLog?) -> Unit = {})
 }
