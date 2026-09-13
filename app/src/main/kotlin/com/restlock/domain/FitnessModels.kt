@@ -117,9 +117,12 @@ data class WorkoutLog(
         }
 }
 
+/** Keep known, unique exercises in stable rank order, repairing bounds and contiguous ranks. */
 fun List<PlannedExercise>.normalizedWorkoutExercises(): List<PlannedExercise> {
     return mapIndexed { index, exercise -> index to exercise }
         .sortedWith(compareBy<Pair<Int, PlannedExercise>> { it.second.rank }.thenBy { it.first })
+        .filter { ExerciseCatalog.byId(it.second.exerciseId) != null }
+        .distinctBy { it.second.exerciseId }
         .mapIndexed { index, exercise ->
             exercise.second.copy(
                 sets = exercise.second.sets.coerceIn(PlannedExercise.MinSets, PlannedExercise.MaxSets),

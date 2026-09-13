@@ -18,19 +18,35 @@ import com.restlock.domain.UserProfile
 import com.restlock.domain.UserSex
 import com.restlock.domain.WorkoutLog
 import com.restlock.domain.WorkoutResults
+import com.restlock.domain.WorkoutMutationResult
+import com.restlock.domain.normalizedWorkoutExercises
 import java.io.IOException
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.WeakHashMap
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private val Context.fitnessDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "fitness_repository",
 )
 
-class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : FitnessRepository {
-    constructor(context: Context) : this(context.applicationContext.fitnessDataStore)
+class BackendFitnessRepository(
+    private val dataStore: DataStore<Preferences>,
+    private val backendActiveWorkoutId: suspend () -> String? = { null },
+) : FitnessRepository {
+    constructor(context: Context, backendActiveWorkoutId: suspend () -> String? = { null }) :
+        this(context.applicationContext.fitnessDataStore, backendActiveWorkoutId)
+
+    private val workoutMutationMutex = synchronized(workoutLocks) {
+        workoutLocks.getOrPut(dataStore) { Mutex() }
+    }
+
+    override suspend fun <T> withWorkoutStartLock(action: suspend () -> T): T =
+        workoutMutationMutex.withLock { action() }
 
     private val safeData: Flow<Preferences> = dataStore.data
         .catch { throwable ->
@@ -74,14 +90,55 @@ class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : 
         }
     }
 
-    override suspend fun saveWorkout(workout: PlannedWorkout) {
-        dataStore.edit { preferences ->
-            val current = decodeWorkouts(preferences[Keys.savedWorkouts].orEmpty())
-            val next = listOf(workout) + current.filterNot { it.id == workout.id }
-            preferences[Keys.savedWorkouts] = next
-                .take(MaxSavedWorkouts)
-                .joinToString(RecordSeparator, transform = ::encodeWorkout)
+    override suspend fun saveWorkout(workout: PlannedWorkout, requireExisting: Boolean): WorkoutMutationResult {
+        val normalized = workout.copy(
+            name = workout.name.trim().ifBlank { "Workout" },
+            exercises = workout.exercises.normalizedWorkoutExercises(),
+        )
+        if (normalized.id.isBlank() || normalized.exercises.isEmpty()) return WorkoutMutationResult.InvalidWorkout
+        return workoutMutationMutex.withLock {
+            val backendActiveId = backendActiveWorkoutId()
+            var result = WorkoutMutationResult.Success
+            dataStore.edit { preferences ->
+                val protectedIds = setOfNotNull(preferences[Keys.activeWorkoutId], backendActiveId)
+                if (normalized.id in protectedIds) {
+                    result = WorkoutMutationResult.ActiveWorkout
+                    return@edit
+                }
+                val current = decodeWorkouts(preferences[Keys.savedWorkouts].orEmpty())
+                val existing = current.firstOrNull { it.id == normalized.id }
+                if (requireExisting && existing == null) {
+                    result = WorkoutMutationResult.NotFound
+                    return@edit
+                }
+                val saved = normalized.copy(createdAtMillis = existing?.createdAtMillis ?: normalized.createdAtMillis)
+                val next = (listOf(saved) + current.filterNot { it.id == saved.id }).toMutableList()
+                // Keep the current session's definition even when inserting at the storage limit.
+                while (next.size > MaxSavedWorkouts) {
+                    val removableIndex = next.indexOfLast { it.id !in protectedIds && it.id != saved.id }
+                    next.removeAt(removableIndex)
+                }
+                preferences[Keys.savedWorkouts] = next.joinToString(RecordSeparator, transform = ::encodeWorkout)
+            }
+            result
         }
+    }
+
+    override suspend fun deleteWorkout(workoutId: String): WorkoutMutationResult = workoutMutationMutex.withLock {
+        val backendActiveId = backendActiveWorkoutId()
+        var result = WorkoutMutationResult.NotFound
+        dataStore.edit { preferences ->
+            if (workoutId == preferences[Keys.activeWorkoutId] || workoutId == backendActiveId) {
+                result = WorkoutMutationResult.ActiveWorkout
+                return@edit
+            }
+            val current = decodeWorkouts(preferences[Keys.savedWorkouts].orEmpty())
+            if (current.none { it.id == workoutId }) return@edit
+            preferences[Keys.savedWorkouts] = current.filterNot { it.id == workoutId }
+                .joinToString(RecordSeparator, transform = ::encodeWorkout)
+            result = WorkoutMutationResult.Success
+        }
+        result
     }
 
     override suspend fun logWorkout(log: WorkoutLog) {
@@ -159,6 +216,7 @@ class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : 
     private fun decodeWorkouts(raw: String): List<PlannedWorkout> {
         return raw.lineSequence()
             .mapNotNull(::decodeWorkout)
+            .distinctBy { it.id }
             .sortedByDescending { it.createdAtMillis }
             .toList()
     }
@@ -180,7 +238,9 @@ class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : 
         ).joinToString(FieldSeparator)
     }
 
-    private fun decodeWorkout(raw: String): PlannedWorkout? {
+    private fun decodeWorkout(raw: String): PlannedWorkout? = runCatching { parseWorkout(raw) }.getOrNull()
+
+    private fun parseWorkout(raw: String): PlannedWorkout? {
         val parts = raw.split(FieldSeparator, limit = 5)
         if (parts.size != 5) return null
         val createdAt = parts[2].toLongOrNull() ?: return null
@@ -197,11 +257,13 @@ class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : 
                 }
             else -> return null
         }
+        val normalized = exercises.normalizedWorkoutExercises()
+        if (normalized.isEmpty()) return null
         return PlannedWorkout(
-            id = decode(parts[1]),
+            id = decode(parts[1]).takeIf { it.isNotBlank() } ?: return null,
             createdAtMillis = createdAt,
-            name = decode(parts[3]).ifBlank { "Workout" },
-            exercises = exercises,
+            name = decode(parts[3]).trim().ifBlank { "Workout" },
+            exercises = normalized,
         )
     }
 
@@ -218,7 +280,7 @@ class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : 
         return raw.split(ExerciseSeparator)
             .filter { it.isNotBlank() }
             .mapIndexedNotNull { index, encodedExercise ->
-                decodePlannedExercise(encodedExercise, fallbackRank = index + 1)
+                runCatching { decodePlannedExercise(encodedExercise, fallbackRank = index + 1) }.getOrNull()
             }
     }
 
@@ -247,7 +309,9 @@ class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : 
         ).joinToString(FieldSeparator)
     }
 
-    private fun decodeLog(raw: String): WorkoutLog? {
+    private fun decodeLog(raw: String): WorkoutLog? = runCatching { parseLog(raw) }.getOrNull()
+
+    private fun parseLog(raw: String): WorkoutLog? {
         val parts = raw.split(FieldSeparator)
         val legacy = parts.firstOrNull() == LegacyLogVersion
         if (legacy && parts.size != 6) return null
@@ -258,18 +322,16 @@ class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : 
             durationMinutes = if (parts[3].isEmpty() && !legacy) null else parts[3].toIntOrNull() ?: return null,
             calories = parts[4].toIntOrNull() ?: return null,
             exerciseCount = parts[5].toIntOrNull() ?: return null,
-            startedAtMillis = parts.getOrNull(6)?.toLongOrNull(),
-            completedSets = parts.getOrNull(7)?.toIntOrNull(),
-            plannedSets = parts.getOrNull(8)?.toIntOrNull(),
+            startedAtMillis = parts.getOrNull(6)?.takeIf { it.isNotEmpty() }?.toLong(),
+            completedSets = parts.getOrNull(7)?.takeIf { it.isNotEmpty() }?.toInt(),
+            plannedSets = parts.getOrNull(8)?.takeIf { it.isNotEmpty() }?.toInt(),
         )
     }
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
     // Uri used percent encoding, not form encoding: legacy literal plus signs must survive.
-    private fun decode(value: String): String = runCatching {
-        URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
-    }.getOrDefault(value)
+    private fun decode(value: String): String = URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
 
     private object Keys {
         val ageYears = intPreferencesKey("age_years")
@@ -284,6 +346,7 @@ class BackendFitnessRepository(private val dataStore: DataStore<Preferences>) : 
     }
 
     private companion object {
+        val workoutLocks = WeakHashMap<DataStore<Preferences>, Mutex>()
         const val WorkoutVersion = "workout-v2"
         const val LegacyWorkoutVersion = "workout-v1"
         const val LogVersion = "log-v2"

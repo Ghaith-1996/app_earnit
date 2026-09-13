@@ -8,7 +8,6 @@ import com.restlock.domain.SessionEngine
 import com.restlock.domain.SessionState
 import com.restlock.domain.FitnessRepository
 import com.restlock.domain.PlannedWorkout
-import com.restlock.domain.ExerciseCatalog
 import com.restlock.domain.ActiveWorkoutSession
 import com.restlock.domain.WorkoutLog
 import kotlinx.coroutines.channels.Channel
@@ -34,7 +33,7 @@ class BackendSessionEngine(
 
     init {
         commands.trySend {
-            restoreActiveWorkout()
+            fitnessRepository.withWorkoutStartLock { restoreActiveWorkout() }
             controller.pendingCompletion()?.let { clearFinishedWorkout(it) }
         }
         scope.launch {
@@ -57,21 +56,24 @@ class BackendSessionEngine(
 
     override fun startWorkout(rest: Duration, workout: PlannedWorkout?) {
         commands.trySend {
-            controller.pendingCompletion()?.let { clearFinishedWorkout(it) }
-            if (controller.pendingCompletion() != null) return@trySend
-            val saved = if (workout == null) null else {
-                fitnessRepository.savedWorkouts.first().firstOrNull { it.id == workout.id }
-                    ?: return@trySend
-            }
-            if (saved != null && (saved.exercises.isEmpty() ||
-                    saved.exercises.any { ExerciseCatalog.byId(it.exerciseId) == null })) return@trySend
-            if (controller.startWorkout(rest.inWholeSeconds.toInt(), saved?.totalSets, saved?.id)) {
-                try {
-                    val active = controller.activeWorkout()
-                    fitnessRepository.setActiveWorkoutSession(active?.let { ActiveWorkoutSession(it.workoutId, it.startedAtMillis) })
-                } catch (error: Exception) {
-                    controller.finishWorkout()
-                    throw error
+            fitnessRepository.withWorkoutStartLock {
+                controller.pendingCompletion()?.let { clearFinishedWorkout(it) }
+                if (controller.pendingCompletion() != null) return@withWorkoutStartLock
+                val saved = if (workout == null) null else {
+                    val current = fitnessRepository.savedWorkouts.first().firstOrNull { it.id == workout.id }
+                        ?: return@withWorkoutStartLock
+                    current.copy(exercises = current.orderedExercises)
+                }
+                if (saved != null && saved.exercises.isEmpty()) return@withWorkoutStartLock
+                // Keep the chosen definition stable until its active ID is persisted.
+                if (controller.startWorkout(rest.inWholeSeconds.toInt(), saved?.totalSets, saved?.id)) {
+                    try {
+                        val active = controller.activeWorkout()
+                        fitnessRepository.setActiveWorkoutSession(active?.let { ActiveWorkoutSession(it.workoutId, it.startedAtMillis) })
+                    } catch (error: Exception) {
+                        controller.finishWorkout()
+                        throw error
+                    }
                 }
             }
         }

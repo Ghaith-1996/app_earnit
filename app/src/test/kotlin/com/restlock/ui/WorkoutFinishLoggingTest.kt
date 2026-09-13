@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.fitness.restlock.backend.PermissionStatus
 import com.fitness.restlock.backend.WorkoutMode
+import com.fitness.restlock.backend.WorkoutController
 import com.fitness.restlock.backend.alarm.RestAlarmScheduler
 import com.fitness.restlock.backend.blocking.StaticAppBlockPolicy
 import com.fitness.restlock.backend.permissions.PermissionGateway
@@ -30,6 +31,53 @@ import kotlin.time.Duration.Companion.seconds
 class WorkoutFinishLoggingTest {
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
     @get:Rule val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun `delete and edit cannot race a saved workout start before its metadata write`() = runTest {
+        val scope = backgroundScope
+        val sessionStore = WorkoutPreferencesStore(PreferenceDataStoreFactory.create(scope = scope) {
+            File(temporaryFolder.newFolder(), "session.preferences_pb")
+        })
+        val fitnessStore = PreferenceDataStoreFactory.create(scope = scope) {
+            File(temporaryFolder.newFolder(), "fitness.preferences_pb")
+        }
+        val repository = BackendFitnessRepository(fitnessStore)
+        val secondRepository = BackendFitnessRepository(fitnessStore)
+        repository.saveWorkout(workout())
+        val actualController = DefaultWorkoutController(
+            sessionStore, RecordingAlarm(), TestPermissions(), StaticAppBlockPolicy(emptySet()), scope,
+            object : Clock { override fun nowMillis() = testScheduler.currentTime },
+        )
+        val releaseStart = CompletableDeferred<Unit>()
+        val controller = object : WorkoutController by actualController {
+            override suspend fun startWorkout(restSeconds: Int, plannedSets: Int?, workoutId: String?): Boolean {
+                val started = actualController.startWorkout(restSeconds, plannedSets, workoutId)
+                releaseStart.await()
+                return started
+            }
+        }
+        val engine = BackendSessionEngine(controller, repository, scope)
+        engine.startWorkout(5.seconds, workout())
+        runCurrent()
+        assertThat(actualController.activeWorkout()?.workoutId).isEqualTo("legs")
+        assertThat(repository.activeWorkoutId.first()).isNull()
+        val deletion = async { secondRepository.deleteWorkout("legs") }
+        val edit = async { secondRepository.saveWorkout(workout().copy(name = "Changed"), requireExisting = true) }
+        runCurrent()
+        assertThat(deletion.isCompleted).isFalse()
+        assertThat(edit.isCompleted).isFalse()
+        releaseStart.complete(Unit)
+        runCurrent()
+        assertThat(deletion.await()).isEqualTo(WorkoutMutationResult.ActiveWorkout)
+        assertThat(edit.await()).isEqualTo(WorkoutMutationResult.ActiveWorkout)
+        assertThat(repository.savedWorkouts.first()).containsExactly(workout())
+        assertThat(repository.activeWorkoutId.first()).isEqualTo("legs")
+        engine.finishWorkout()
+        runCurrent()
+        assertThat(repository.workoutLogs.first().single().plannedSets).isEqualTo(3)
+        assertThat(secondRepository.deleteWorkout("legs")).isEqualTo(WorkoutMutationResult.Success)
+        assertThat(repository.workoutLogs.first()).hasSize(1)
+    }
 
     @Test
     fun `process death between backend start and fitness metadata write restores original identity`() = runTest {
@@ -315,14 +363,17 @@ class WorkoutFinishLoggingTest {
     @Test
     fun `moving exercises changes the saved execution order in both directions`() = runTest {
         val repository = MemoryFitnessRepository()
+        repository.saveWorkout(workout())
         val vm = WorkoutViewModel(repository)
         vm.startEditingWorkout(workout())
+        runCurrent()
         vm.moveExerciseDown("barbell_squat")
         vm.saveWorkout()
         runCurrent()
         assertThat(repository.savedWorkouts.value.single().exerciseIds)
             .containsExactly("leg_press", "barbell_squat").inOrder()
         vm.startEditingWorkout(repository.savedWorkouts.value.single())
+        runCurrent()
         vm.moveExerciseUp("barbell_squat")
         vm.saveWorkout()
         runCurrent()
@@ -474,8 +525,14 @@ private class MemoryFitnessRepository : FitnessRepository {
     override val activeWorkoutSession = MutableStateFlow<ActiveWorkoutSession?>(null)
     override val pendingWorkoutSummary = MutableStateFlow<WorkoutLog?>(null)
     override suspend fun saveUserProfile(profile: UserProfile) { userProfile.value = profile }
-    override suspend fun saveWorkout(workout: PlannedWorkout) {
+    override suspend fun saveWorkout(workout: PlannedWorkout, requireExisting: Boolean): WorkoutMutationResult {
         savedWorkouts.value = listOf(workout) + savedWorkouts.value.filterNot { it.id == workout.id }
+        return WorkoutMutationResult.Success
+    }
+    override suspend fun deleteWorkout(workoutId: String): WorkoutMutationResult {
+        if (activeWorkoutId.value == workoutId) return WorkoutMutationResult.ActiveWorkout
+        savedWorkouts.value = savedWorkouts.value.filterNot { it.id == workoutId }
+        return WorkoutMutationResult.Success
     }
     override suspend fun setActiveWorkoutSession(session: ActiveWorkoutSession?) {
         activeWorkoutSession.value = session
