@@ -22,8 +22,8 @@ private val Context.workoutDataStore: DataStore<Preferences> by preferencesDataS
     name = "workout_backend",
 )
 
-class WorkoutPreferencesStore(context: Context) {
-    private val dataStore = context.applicationContext.workoutDataStore
+class WorkoutPreferencesStore(private val dataStore: DataStore<Preferences>) {
+    constructor(context: Context) : this(context.applicationContext.workoutDataStore)
 
     val snapshots: Flow<WorkoutSessionSnapshot> = dataStore.data
         .catch { throwable ->
@@ -48,6 +48,9 @@ class WorkoutPreferencesStore(context: Context) {
             preferences[Keys.timerEndEpochMillis] = nextSnapshot.timerEndEpochMillis
             preferences[Keys.completedSets] = nextSnapshot.completedSets
             preferences[Keys.extraRests] = nextSnapshot.extraRests
+            val plannedSets = nextSnapshot.plannedSets
+            if (plannedSets == null) preferences.remove(Keys.plannedSets)
+            else preferences[Keys.plannedSets] = plannedSets
         }
         return nextSnapshot
     }
@@ -63,6 +66,7 @@ class WorkoutPreferencesStore(context: Context) {
             timerEndEpochMillis = this[Keys.timerEndEpochMillis] ?: 0L,
             completedSets = this[Keys.completedSets] ?: 0,
             extraRests = this[Keys.extraRests] ?: 0,
+            plannedSets = this[Keys.plannedSets]?.takeIf { it > 0 },
         )
     }
 
@@ -73,5 +77,6 @@ class WorkoutPreferencesStore(context: Context) {
         val timerEndEpochMillis = longPreferencesKey("timer_end_epoch_millis")
         val completedSets = intPreferencesKey("completed_sets")
         val extraRests = intPreferencesKey("extra_rests")
+        val plannedSets = intPreferencesKey("planned_sets")
     }
 }

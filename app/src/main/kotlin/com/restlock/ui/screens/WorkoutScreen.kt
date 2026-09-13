@@ -64,6 +64,8 @@ import com.restlock.ui.theme.RestLockPalette
 @Composable
 fun WorkoutScreen(
     viewModel: WorkoutViewModel,
+    sessionActive: Boolean,
+    onStartSavedWorkout: (PlannedWorkout) -> Unit,
     onHome: () -> Unit,
     onSettings: () -> Unit,
 ) {
@@ -85,7 +87,11 @@ fun WorkoutScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (state.isBuilderOpen) {
+            if (sessionActive) {
+                Text("A workout is running. Return Home to continue or finish it.")
+                SecondaryAction(label = "Return to session", onClick = onHome)
+            }
+            if (state.isBuilderOpen && !sessionActive) {
                 WorkoutBuilder(
                     state = state,
                     onNameChange = viewModel::setWorkoutName,
@@ -104,7 +110,8 @@ fun WorkoutScreen(
                     state = state,
                     onAddWorkout = viewModel::startAddingWorkout,
                     onEditWorkout = viewModel::startEditingWorkout,
-                    onLogSavedWorkout = viewModel::logSavedWorkout,
+                    onStartSavedWorkout = onStartSavedWorkout,
+                    sessionActive = sessionActive,
                 )
             }
         }
@@ -146,7 +153,8 @@ private fun WorkoutOverview(
     state: WorkoutUiState,
     onAddWorkout: () -> Unit,
     onEditWorkout: (PlannedWorkout) -> Unit,
-    onLogSavedWorkout: (PlannedWorkout) -> Unit,
+    onStartSavedWorkout: (PlannedWorkout) -> Unit,
+    sessionActive: Boolean,
 ) {
     GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 18) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -165,6 +173,7 @@ private fun WorkoutOverview(
             PrimaryAction(
                 label = "Add workout",
                 onClick = onAddWorkout,
+                enabled = !sessionActive,
                 leadingIcon = Icons.Rounded.Add,
                 brush = PrimaryBrush,
             )
@@ -174,7 +183,8 @@ private fun WorkoutOverview(
     SavedWorkoutsCard(
         state = state,
         onEditWorkout = onEditWorkout,
-        onLogSavedWorkout = onLogSavedWorkout,
+        onStartSavedWorkout = onStartSavedWorkout,
+        sessionActive = sessionActive,
     )
 
     ExerciseCatalogCard(state = state)
@@ -184,7 +194,8 @@ private fun WorkoutOverview(
 private fun SavedWorkoutsCard(
     state: WorkoutUiState,
     onEditWorkout: (PlannedWorkout) -> Unit,
-    onLogSavedWorkout: (PlannedWorkout) -> Unit,
+    onStartSavedWorkout: (PlannedWorkout) -> Unit,
+    sessionActive: Boolean,
 ) {
     GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 18) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -210,7 +221,8 @@ private fun SavedWorkoutsCard(
                         ),
                         minutes = FitnessCalculator.durationForPlannedExercises(workout.exercises),
                         onEdit = { onEditWorkout(workout) },
-                        onLog = { onLogSavedWorkout(workout) },
+                        onStart = { onStartSavedWorkout(workout) },
+                        sessionActive = sessionActive,
                     )
                 }
             }
@@ -224,7 +236,8 @@ private fun SavedWorkoutRow(
     calories: Int,
     minutes: Int,
     onEdit: () -> Unit,
-    onLog: () -> Unit,
+    onStart: () -> Unit,
+    sessionActive: Boolean,
 ) {
     val coverExercise = workout.orderedExercises
         .firstOrNull()
@@ -259,17 +272,21 @@ private fun SavedWorkoutRow(
                 color = RestLockPalette.TextLow,
             )
         }
-        IconButton(onClick = onEdit) {
+        IconButton(onClick = onEdit, enabled = !sessionActive) {
             Icon(
                 imageVector = Icons.Rounded.Edit,
                 contentDescription = "Modify workout",
                 tint = RestLockPalette.TextMid,
             )
         }
-        IconButton(onClick = onLog) {
+        IconButton(
+            onClick = onStart,
+            enabled = !sessionActive && workout.exercises.isNotEmpty() &&
+                workout.exercises.all { ExerciseCatalog.byId(it.exerciseId) != null },
+        ) {
             Icon(
                 imageVector = Icons.Rounded.PlayArrow,
-                contentDescription = "Log workout",
+                contentDescription = "Start ${workout.name}",
                 tint = RestLockPalette.Mint,
             )
         }

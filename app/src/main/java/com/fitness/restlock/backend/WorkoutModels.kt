@@ -23,6 +23,7 @@ data class WorkoutState(
     val permissionStatus: PermissionStatus = PermissionStatus(),
     val completedSets: Int = 0,
     val extraRests: Int = 0,
+    val plannedSets: Int? = null,
 ) {
     val isWorkoutActive: Boolean
         get() = mode != WorkoutMode.Idle

@@ -5,6 +5,33 @@ import org.junit.Test
 
 class WorkoutProgressTest {
     @Test
+    fun `every set follows uneven exercise boundaries without wrapping after completion`() {
+        val workout = PlannedWorkout(
+            id = "mixed", name = "Mixed", createdAtMillis = 1L,
+            exercises = listOf(
+                PlannedExercise("bench_press", sets = 3, rank = 2),
+                PlannedExercise("leg_press", sets = 2, rank = 3),
+                PlannedExercise("barbell_squat", sets = 1, rank = 1),
+            ),
+        )
+        val expected = listOf(
+            "barbell_squat" to 1, "bench_press" to 1, "bench_press" to 2,
+            "bench_press" to 3, "leg_press" to 1, "leg_press" to 2,
+        )
+        expected.forEachIndexed { completed, (exerciseId, set) ->
+            val preview = WorkoutProgress.activeExercise(workout, completed)!!
+            assertThat(preview.definition.id).isEqualTo(exerciseId)
+            assertThat(preview.setNumberForExercise).isEqualTo(set)
+            assertThat(preview.totalSetsInWorkout).isEqualTo(6)
+        }
+        assertThat(WorkoutProgress.activeExercise(workout, -1)?.setNumberForExercise).isEqualTo(1)
+        assertThat(WorkoutProgress.activeExercise(workout, 6)).isNull()
+        assertThat(WorkoutProgress.activeExercise(workout, 99)).isNull()
+        assertThat(WorkoutProgress.activeExercise(null, 0)).isNull()
+        assertThat(WorkoutProgress.activeExercise(workout.copy(exercises = emptyList()), 0)).isNull()
+    }
+
+    @Test
     fun `active exercise follows rank order and set count`() {
         val workout = PlannedWorkout(
             id = "legs",

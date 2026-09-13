@@ -14,8 +14,10 @@ interface WorkoutController {
     )
     fun setBlockedApps(packages: Set<String>) = setAllowedApps(packages)
 
-    fun startWorkout()
+    /** Returns false if another session is already active. */
+    suspend fun startWorkout(restSeconds: Int, plannedSets: Int? = null): Boolean
     fun addThirtySecondsRest()
-    fun exerciseDone()
-    fun finishWorkout()
+    /** Returns true when this command completed the final planned set. */
+    suspend fun exerciseDone(): Boolean
+    suspend fun finishWorkout()
 }

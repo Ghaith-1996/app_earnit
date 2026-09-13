@@ -1,301 +1,378 @@
 package com.restlock.ui
 
 import android.content.Intent
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.fitness.restlock.backend.PermissionStatus
+import com.fitness.restlock.backend.WorkoutMode
+import com.fitness.restlock.backend.alarm.RestAlarmScheduler
+import com.fitness.restlock.backend.blocking.StaticAppBlockPolicy
 import com.fitness.restlock.backend.permissions.PermissionGateway
+import com.fitness.restlock.backend.persistence.WorkoutPreferencesStore
+import com.fitness.restlock.backend.session.Clock
+import com.fitness.restlock.backend.session.DefaultWorkoutController
 import com.google.common.truth.Truth.assertThat
-import com.restlock.domain.FitnessCalculator
-import com.restlock.domain.FitnessRepository
-import com.restlock.domain.PlannedExercise
-import com.restlock.domain.PlannedWorkout
-import com.restlock.domain.SessionEngine
-import com.restlock.domain.SessionState
-import com.restlock.domain.SettingsRepository
-import com.restlock.domain.UserProfile
-import com.restlock.domain.WorkoutLog
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
+import com.restlock.domain.*
+import com.restlock.domain.backend.BackendSessionEngine
+import com.restlock.domain.fake.FakeSettingsRepository
+import java.io.File
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.test.*
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkoutFinishLoggingTest {
-    @get:Rule
-    val mainDispatcherRule = MainDispatcherRule()
+    @get:Rule val mainDispatcherRule = MainDispatcherRule()
+    @get:Rule val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun `startSavedWorkout persists active workout id and starts session`() = runTest {
-        val fitnessRepository = FakeFitnessRepository()
-        val workout = sampleWorkout()
-        fitnessRepository.saveWorkout(workout)
-        val sessionEngine = TestSessionEngine()
-        val viewModel = homeViewModel(
-            fitnessRepository = fitnessRepository,
-            sessionEngine = sessionEngine,
-        )
-        val collection = backgroundScope.launch(mainDispatcherRule.dispatcher) {
-            viewModel.uiState.collect()
+    fun `saved launch works before Home UI subscribes and does not log a completion`() = runTest {
+        val fixture = fixture()
+        fixture.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        assertThat(fixture.repository.activeWorkoutId.value).isEqualTo("legs")
+        assertThat(fixture.engine.state.value.phase).isEqualTo(SessionState.Phase.Resting)
+        assertThat(fixture.engine.state.value.setsCompleted).isEqualTo(0)
+        assertThat(fixture.engine.state.value.plannedSets).isEqualTo(3)
+        assertThat(fixture.engine.state.value.remaining).isEqualTo(5.seconds)
+        assertThat(fixture.engine.state.value.blockerArmed).isFalse()
+        assertThat(fixture.repository.workoutLogs.value).isEmpty()
+        assertThat(fixture.alarm.deadline).isEqualTo(5_000L)
+    }
+
+    @Test
+    fun `Home and Blocker advance every planned set then final set ends without another alarm`() = runTest {
+        val f = fixture()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { f.home.uiState.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { f.blocker.activeExercisePreview.collect() }
+        f.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        assertPreview(f, "barbell_squat", 1, 0)
+        repeat(2) { index ->
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.AwaitingDecision)
+            assertThat(f.engine.state.value.blockerArmed).isTrue()
+            if (index == 0) f.home.exerciseDone() else f.blocker.exerciseDone()
+            runCurrent()
+            assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Resting)
+            assertThat(f.engine.state.value.blockerArmed).isFalse()
+            if (index == 0) assertPreview(f, "barbell_squat", 2, 1)
+            else assertPreview(f, "leg_press", 1, 2)
         }
+        advanceTimeBy(5_000)
         runCurrent()
-
-        viewModel.startSavedWorkout(workout.id, 60.seconds)
+        assertThat(f.engine.state.value.isFinalSet).isTrue()
+        f.blocker.exerciseDone()
+        f.home.exerciseDone() // A simultaneous duplicate must not count or finish twice.
         runCurrent()
-
-        assertThat(fitnessRepository.activeWorkoutId.value).isEqualTo(workout.id)
-        assertThat(sessionEngine.startedRest).isEqualTo(60.seconds)
-        collection.cancel()
+        assertFinished(f)
+        assertThat(f.repository.workoutLogs.value).hasSize(1)
+        assertThat(f.home.uiState.value.activeExercisePreview).isNull()
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertFinished(f)
     }
 
     @Test
-    fun `finish from Home logs active workout and clears active id`() = runTest {
-        val fitnessRepository = FakeFitnessRepository()
-        val workout = sampleWorkout()
-        fitnessRepository.saveWorkout(workout)
-        fitnessRepository.setActiveWorkoutId(workout.id)
-        val sessionEngine = TestSessionEngine()
-        val viewModel = homeViewModel(
-            fitnessRepository = fitnessRepository,
-            sessionEngine = sessionEngine,
-        )
-
-        viewModel.finishWorkout()
+    fun `one set workout can add rest on final set and finish from Home`() = runTest {
+        val f = fixture(workout(sets = 1, secondExercise = false))
+        f.home.startSavedWorkout("legs", 5.seconds)
         runCurrent()
-
-        val logs = fitnessRepository.workoutLogs.value
-        assertThat(logs).hasSize(1)
-        assertThat(logs.single().name).isEqualTo(workout.name)
-        assertThat(logs.single().exerciseCount).isEqualTo(workout.exerciseIds.size)
-        assertThat(fitnessRepository.activeWorkoutId.value).isNull()
-        assertThat(sessionEngine.finishCalls).isEqualTo(1)
+        advanceTimeBy(5_000)
+        runCurrent()
+        f.blocker.addThirtySeconds()
+        runCurrent()
+        assertThat(f.engine.state.value.setsCompleted).isEqualTo(0)
+        assertThat(f.engine.state.value.extraRests).isEqualTo(1)
+        assertThat(f.engine.state.value.remaining).isEqualTo(30.seconds)
+        assertThat(f.engine.state.value.blockerArmed).isFalse()
+        advanceTimeBy(30_000)
+        runCurrent()
+        f.home.exerciseDone()
+        runCurrent()
+        assertFinished(f)
+        assertThat(f.repository.workoutLogs.value).hasSize(1)
     }
 
     @Test
-    fun `finish from Blocker logs active workout and clears active id before callback`() = runTest {
-        val fitnessRepository = FakeFitnessRepository()
-        val workout = sampleWorkout()
-        fitnessRepository.saveWorkout(workout)
-        fitnessRepository.setActiveWorkoutId(workout.id)
-        val sessionEngine = TestSessionEngine()
-        val viewModel = BlockerViewModel(
-            sessionEngine = sessionEngine,
-            fitnessRepository = fitnessRepository,
-        )
-        var callbackSawFinishedState = false
+    fun `duplicate launches preserve the running plan timer rest duration and progress`() = runTest {
+        val f = fixture()
+        f.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        f.home.exerciseDone()
+        runCurrent()
+        val before = f.engine.state.value
+        f.repository.saveWorkout(workout().copy(id = "other"))
+        f.home.startSavedWorkout("other", 60.seconds)
+        f.home.startWorkout(90.seconds)
+        runCurrent()
+        assertThat(f.engine.state.value).isEqualTo(before)
+        assertThat(f.repository.activeWorkoutId.value).isEqualTo("legs")
+        assertThat(f.alarm.deadline).isEqualTo(10_000L)
+    }
 
-        viewModel.finishWorkout {
-            callbackSawFinishedState = sessionEngine.finishCalls == 1 &&
-                fitnessRepository.activeWorkoutId.value == null &&
-                fitnessRepository.workoutLogs.value.size == 1
+    @Test
+    fun `missing empty and unknown exercise plans do not launch or log`() = runTest {
+        val f = fixture()
+        for (invalid in listOf(
+            workout().copy(id = "empty", exercises = emptyList()),
+            workout().copy(id = "unknown", exercises = listOf(PlannedExercise("missing"))),
+        )) f.repository.saveWorkout(invalid)
+        for (id in listOf("missing", "empty", "unknown")) f.home.startSavedWorkout(id, 5.seconds)
+        runCurrent()
+        assertFinished(f)
+        assertThat(f.repository.workoutLogs.value).isEmpty()
+    }
+
+    @Test
+    fun `manual finish from both screens clears plan and preserves existing single log behavior`() = runTest {
+        val f = fixture()
+        for (fromBlocker in listOf(false, true)) {
+            f.home.startSavedWorkout("legs", 5.seconds)
+            runCurrent()
+            var callbackFinished = false
+            if (fromBlocker) {
+                advanceTimeBy(5_000)
+                runCurrent()
+                f.blocker.finishWorkout {
+                    callbackFinished = f.repository.activeWorkoutId.value == null && f.alarm.deadline == null
+                }
+            } else f.home.finishWorkout()
+            runCurrent()
+            assertFinished(f)
+            if (fromBlocker) assertThat(callbackFinished).isTrue()
         }
+        assertThat(f.repository.workoutLogs.value).hasSize(2)
+        f.blocker.finishWorkout()
         runCurrent()
-
-        assertThat(callbackSawFinishedState).isTrue()
-        assertThat(fitnessRepository.workoutLogs.value.single().name).isEqualTo(workout.name)
+        assertThat(f.repository.workoutLogs.value).hasSize(2)
     }
 
     @Test
-    fun `finish without active workout does not log and still finishes session`() = runTest {
-        val fitnessRepository = FakeFitnessRepository()
-        val sessionEngine = TestSessionEngine()
-        val viewModel = BlockerViewModel(
-            sessionEngine = sessionEngine,
-            fitnessRepository = fitnessRepository,
-        )
-
-        viewModel.finishWorkout()
+    fun `quick start after saved completion clears planned limit and remains open ended`() = runTest {
+        val f = fixture(workout(sets = 1, secondExercise = false))
+        f.home.startSavedWorkout("legs", 5.seconds)
         runCurrent()
-
-        assertThat(fitnessRepository.workoutLogs.value).isEmpty()
-        assertThat(fitnessRepository.activeWorkoutId.value).isNull()
-        assertThat(sessionEngine.finishCalls).isEqualTo(1)
+        advanceTimeBy(5_000)
+        runCurrent()
+        f.home.exerciseDone()
+        runCurrent()
+        f.home.startWorkout(5.seconds)
+        runCurrent()
+        repeat(4) {
+            advanceTimeBy(5_000)
+            runCurrent()
+            f.home.exerciseDone()
+            runCurrent()
+        }
+        assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Resting)
+        assertThat(f.engine.state.value.setsCompleted).isEqualTo(4)
+        assertThat(f.engine.state.value.plannedSets).isNull()
+        assertThat(f.repository.activeWorkoutId.value).isNull()
+        f.home.finishWorkout()
+        runCurrent()
+        assertThat(f.repository.workoutLogs.value).hasSize(1)
     }
 
     @Test
-    fun `missing active workout is cleared without crash or log`() = runTest {
-        val fitnessRepository = FakeFitnessRepository()
-        fitnessRepository.setActiveWorkoutId("missing-workout")
-        val sessionEngine = TestSessionEngine()
-        val viewModel = BlockerViewModel(
-            sessionEngine = sessionEngine,
-            fitnessRepository = fitnessRepository,
-        )
-
-        viewModel.finishWorkout()
+    fun `reopening DataStore recovers progress and final set limit after timer expiry`() = runTest {
+        val f = fixture()
+        f.home.startSavedWorkout("legs", 5.seconds)
         runCurrent()
-
-        assertThat(fitnessRepository.workoutLogs.value).isEmpty()
-        assertThat(fitnessRepository.activeWorkoutId.value).isNull()
-        assertThat(sessionEngine.finishCalls).isEqualTo(1)
+        repeat(2) {
+            advanceTimeBy(5_000)
+            runCurrent()
+            f.home.exerciseDone()
+            runCurrent()
+        }
+        assertThat(f.store.snapshots.first().plannedSets).isEqualTo(3)
+        f.sessionJob.cancelAndJoin()
+        f.storageJob.cancelAndJoin()
+        advanceTimeBy(10_000)
+        val restored = fixture(file = f.file, repository = f.repository)
+        runCurrent()
+        assertThat(restored.engine.state.value.phase).isEqualTo(SessionState.Phase.AwaitingDecision)
+        assertThat(restored.engine.state.value.setsCompleted).isEqualTo(2)
+        assertThat(restored.engine.state.value.isFinalSet).isTrue()
+        restored.blocker.exerciseDone()
+        runCurrent()
+        assertFinished(restored)
+        assertThat(restored.store.snapshots.first().plannedSets).isNull()
     }
 
-    private fun homeViewModel(
-        fitnessRepository: FakeFitnessRepository,
-        sessionEngine: TestSessionEngine = TestSessionEngine(),
-    ): HomeViewModel {
-        return HomeViewModel(
-            sessionEngine = sessionEngine,
-            settingsRepository = FakeSettingsRepository(),
-            fitnessRepository = fitnessRepository,
-            permissionGateway = FakePermissionGateway(),
-            refreshPermissionsPeriodically = false,
+    @Test
+    fun `moving exercises changes the saved execution order in both directions`() = runTest {
+        val repository = MemoryFitnessRepository()
+        val vm = WorkoutViewModel(repository)
+        vm.startEditingWorkout(workout())
+        vm.moveExerciseDown("barbell_squat")
+        vm.saveWorkout()
+        runCurrent()
+        assertThat(repository.savedWorkouts.value.single().exerciseIds)
+            .containsExactly("leg_press", "barbell_squat").inOrder()
+        vm.startEditingWorkout(repository.savedWorkouts.value.single())
+        vm.moveExerciseUp("barbell_squat")
+        vm.saveWorkout()
+        runCurrent()
+        val saved = repository.savedWorkouts.value.single()
+        assertThat(saved.exerciseIds).containsExactly("barbell_squat", "leg_press").inOrder()
+        assertThat(saved.orderedExercises.map { it.sets }).containsExactly(2, 1).inOrder()
+        assertThat(saved.orderedExercises.map { it.reps }).containsExactly(8, 12).inOrder()
+    }
+
+    @Test
+    fun `completion bookkeeping cannot clear the next workout launched while logging`() = runTest {
+        val f = fixture(workout(sets = 1, secondExercise = false))
+        f.repository.logDelayMillis = 1_000
+        f.repository.saveWorkout(workout().copy(id = "next"))
+        f.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        f.home.exerciseDone()
+        runCurrent()
+        assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Idle)
+        f.home.startSavedWorkout("next", 5.seconds)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertThat(f.repository.activeWorkoutId.value).isEqualTo("next")
+        assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Resting)
+        assertThat(f.engine.state.value.plannedSets).isEqualTo(3)
+        assertThat(f.repository.workoutLogs.value).hasSize(1)
+    }
+
+    @Test
+    fun `logging failure still ends final set clears selection and allows another session`() = runTest {
+        val f = fixture(workout(sets = 1, secondExercise = false))
+        f.repository.failLogging = true
+        f.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        f.blocker.exerciseDone()
+        runCurrent()
+        assertFinished(f)
+        f.home.startWorkout(5.seconds)
+        runCurrent()
+        assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Resting)
+    }
+
+    @Test
+    fun `finish clears a missing active workout without logging`() = runTest {
+        val f = fixture()
+        f.repository.setActiveWorkoutId("deleted")
+        f.blocker.finishWorkout()
+        runCurrent()
+        assertFinished(f)
+        assertThat(f.repository.workoutLogs.value).isEmpty()
+    }
+
+    private fun assertPreview(f: Fixture, exercise: String, set: Int, completed: Int) {
+        val preview = f.home.uiState.value.activeExercisePreview!!
+        assertThat(preview.definition.id).isEqualTo(exercise)
+        assertThat(preview.setNumberForExercise).isEqualTo(set)
+        assertThat(preview.completedSetsInWorkout).isEqualTo(completed)
+        assertThat(preview.totalSetsInWorkout).isEqualTo(3)
+        assertThat(f.blocker.activeExercisePreview.value).isEqualTo(preview)
+    }
+
+    private fun assertFinished(f: Fixture) {
+        assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Idle)
+        assertThat(f.engine.state.value.blockerArmed).isFalse()
+        assertThat(f.engine.state.value.remaining).isNull()
+        assertThat(f.engine.state.value.plannedSets).isNull()
+        assertThat(f.repository.activeWorkoutId.value).isNull()
+        assertThat(f.alarm.deadline).isNull()
+    }
+
+    private suspend fun TestScope.fixture(
+        plan: PlannedWorkout = workout(),
+        file: File = File(temporaryFolder.newFolder(), "session.preferences_pb"),
+        repository: MemoryFitnessRepository = MemoryFitnessRepository(),
+    ): Fixture {
+        if (repository.savedWorkouts.value.isEmpty()) repository.saveWorkout(plan)
+        val sessionJob = SupervisorJob(backgroundScope.coroutineContext[Job])
+        val storageJob = SupervisorJob(backgroundScope.coroutineContext[Job])
+        val sessionScope = CoroutineScope(backgroundScope.coroutineContext + sessionJob)
+        val dataStore = PreferenceDataStoreFactory.create(
+            scope = CoroutineScope(backgroundScope.coroutineContext + storageJob),
+            produceFile = { file },
         )
+        val store = WorkoutPreferencesStore(dataStore)
+        val alarm = RecordingAlarm()
+        val permissions = TestPermissions()
+        val controller = DefaultWorkoutController(
+            store, alarm, permissions, StaticAppBlockPolicy(emptySet()), sessionScope,
+            object : Clock { override fun nowMillis() = testScheduler.currentTime },
+        )
+        val engine = BackendSessionEngine(controller, repository, sessionScope)
+        val home = HomeViewModel(engine, FakeSettingsRepository(), repository, permissions, false)
+        return Fixture(repository, engine, home, BlockerViewModel(engine, repository), alarm,
+            store, file, sessionJob, storageJob)
     }
 
-    private fun sampleWorkout(): PlannedWorkout {
-        return PlannedWorkout(
-            id = "push-day",
-            name = "Push day",
-            exercises = listOf(
-                PlannedExercise(exerciseId = "bench_press", sets = 3, reps = 8, rank = 1),
-                PlannedExercise(exerciseId = "overhead_press", sets = 3, reps = 10, rank = 2),
-            ),
-            createdAtMillis = 1_000L,
-        )
-    }
+    private fun workout(sets: Int = 2, secondExercise: Boolean = true) = PlannedWorkout(
+        id = "legs", name = "Leg day", createdAtMillis = 1L,
+        exercises = buildList {
+            add(PlannedExercise("barbell_squat", sets = sets, reps = 8, rank = 1))
+            if (secondExercise) add(PlannedExercise("leg_press", sets = 1, reps = 12, rank = 2))
+        },
+    )
+
+    private data class Fixture(
+        val repository: MemoryFitnessRepository, val engine: BackendSessionEngine,
+        val home: HomeViewModel, val blocker: BlockerViewModel, val alarm: RecordingAlarm,
+        val store: WorkoutPreferencesStore, val file: File, val sessionJob: Job, val storageJob: Job,
+    )
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainDispatcherRule : TestWatcher() {
     val dispatcher = UnconfinedTestDispatcher()
-
-    override fun starting(description: Description) {
-        Dispatchers.setMain(dispatcher)
-    }
-
-    override fun finished(description: Description) {
-        Dispatchers.resetMain()
-    }
+    override fun starting(description: Description) { Dispatchers.setMain(dispatcher) }
+    override fun finished(description: Description) { Dispatchers.resetMain() }
 }
 
-private class FakeFitnessRepository : FitnessRepository {
-    private val userProfileState = MutableStateFlow(UserProfile(weightKg = 70.0))
-    private val savedWorkoutsState = MutableStateFlow<List<PlannedWorkout>>(emptyList())
-    private val workoutLogsState = MutableStateFlow<List<WorkoutLog>>(emptyList())
-    private val activeWorkoutIdState = MutableStateFlow<String?>(null)
+private class RecordingAlarm : RestAlarmScheduler {
+    var deadline: Long? = null
+    override fun scheduleRestEnd(triggerAtMillis: Long) { deadline = triggerAtMillis }
+    override fun cancelRestEnd() { deadline = null }
+}
 
-    override val userProfile: StateFlow<UserProfile> = userProfileState.asStateFlow()
-    override val savedWorkouts: StateFlow<List<PlannedWorkout>> = savedWorkoutsState.asStateFlow()
-    override val workoutLogs: StateFlow<List<WorkoutLog>> = workoutLogsState.asStateFlow()
-    override val activeWorkoutId: StateFlow<String?> = activeWorkoutIdState.asStateFlow()
-
-    override suspend fun saveUserProfile(profile: UserProfile) {
-        userProfileState.value = profile
-    }
-
+private class MemoryFitnessRepository : FitnessRepository {
+    var logDelayMillis = 0L
+    var failLogging = false
+    override val userProfile = MutableStateFlow(UserProfile())
+    override val savedWorkouts = MutableStateFlow<List<PlannedWorkout>>(emptyList())
+    override val workoutLogs = MutableStateFlow<List<WorkoutLog>>(emptyList())
+    override val activeWorkoutId = MutableStateFlow<String?>(null)
+    override suspend fun saveUserProfile(profile: UserProfile) { userProfile.value = profile }
     override suspend fun saveWorkout(workout: PlannedWorkout) {
-        savedWorkoutsState.value = listOf(workout) + savedWorkoutsState.value.filterNot { it.id == workout.id }
+        savedWorkouts.value = listOf(workout) + savedWorkouts.value.filterNot { it.id == workout.id }
     }
-
-    override suspend fun logWorkout(log: WorkoutLog) {
-        workoutLogsState.value = listOf(log) + workoutLogsState.value
-    }
-
-    override suspend fun setActiveWorkoutId(workoutId: String?) {
-        activeWorkoutIdState.value = workoutId
-    }
-
+    override suspend fun setActiveWorkoutId(workoutId: String?) { activeWorkoutId.value = workoutId }
+    override suspend fun logWorkout(log: WorkoutLog) { workoutLogs.value = listOf(log) + workoutLogs.value }
     override suspend fun logActiveWorkoutAndClear(completedAtMillis: Long): Boolean {
-        val workoutId = activeWorkoutIdState.value
-        if (workoutId.isNullOrBlank()) {
-            activeWorkoutIdState.value = null
-            return false
-        }
-
-        val workout = savedWorkoutsState.value.firstOrNull { it.id == workoutId }
-        if (workout == null) {
-            activeWorkoutIdState.value = null
-            return false
-        }
-
-        logWorkout(
-            WorkoutLog(
-                name = workout.name,
-                completedAtMillis = completedAtMillis,
-                durationMinutes = FitnessCalculator.durationForPlannedExercises(workout.exercises),
-                calories = FitnessCalculator.caloriesForPlannedExercises(workout.exercises, userProfileState.value),
-                exerciseCount = workout.exerciseIds.size,
-            )
-        )
-        activeWorkoutIdState.value = null
+        delay(logDelayMillis)
+        if (failLogging) throw java.io.IOException("Storage unavailable")
+        val workout = savedWorkouts.value.firstOrNull { it.id == activeWorkoutId.value }
+        activeWorkoutId.value = null
+        if (workout == null) return false
+        logWorkout(WorkoutLog(workout.name, completedAtMillis, 1, 0, workout.exercises.size))
         return true
     }
 }
 
-private class TestSessionEngine : SessionEngine {
-    private val stateFlow = MutableStateFlow(
-        SessionState(
-            phase = SessionState.Phase.Idle,
-            chosenRest = SettingsRepository.DefaultRest,
-        )
-    )
-
-    override val state: StateFlow<SessionState> = stateFlow.asStateFlow()
-
-    var startedRest: Duration? = null
-        private set
-
-    var finishCalls: Int = 0
-        private set
-
-    override fun startWorkout(rest: Duration) {
-        startedRest = rest
-        stateFlow.value = stateFlow.value.copy(
-            phase = SessionState.Phase.Resting,
-            chosenRest = rest,
-            remaining = rest,
-        )
-    }
-
-    override fun addThirtySeconds() = Unit
-
-    override fun exerciseDone() = Unit
-
-    override fun finishWorkout() {
-        finishCalls += 1
-        stateFlow.value = stateFlow.value.copy(
-            phase = SessionState.Phase.Idle,
-            remaining = null,
-        )
-    }
-}
-
-private class FakeSettingsRepository : SettingsRepository {
-    private val chosenRestState = MutableStateFlow(SettingsRepository.DefaultRest)
-    private val allowedPackagesState = MutableStateFlow<Set<String>>(emptySet())
-
-    override val chosenRest: Flow<Duration> = chosenRestState.asStateFlow()
-    override val allowedPackages: Flow<Set<String>> = allowedPackagesState.asStateFlow()
-
-    override suspend fun setChosenRest(duration: Duration) {
-        chosenRestState.value = duration
-    }
-
-    override suspend fun setAllowedPackages(packages: Set<String>) {
-        allowedPackagesState.value = packages
-    }
-}
-
-private class FakePermissionGateway : PermissionGateway {
-    override fun currentStatus(): PermissionStatus = PermissionStatus(
-        isAccessibilityServiceEnabled = true,
-    )
-
-    override fun accessibilitySettingsIntent(): Intent = Intent()
-
-    override fun appDetailsSettingsIntent(): Intent = Intent()
+private class TestPermissions : PermissionGateway {
+    override fun currentStatus() = PermissionStatus(isAccessibilityServiceEnabled = true)
+    override fun accessibilitySettingsIntent(): Intent = error("Unused in session tests")
+    override fun appDetailsSettingsIntent(): Intent = error("Unused in session tests")
 }

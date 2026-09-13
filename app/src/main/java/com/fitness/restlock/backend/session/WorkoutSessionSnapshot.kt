@@ -10,6 +10,7 @@ data class WorkoutSessionSnapshot(
     val timerEndEpochMillis: Long = 0L,
     val completedSets: Int = 0,
     val extraRests: Int = 0,
+    val plannedSets: Int? = null,
 ) {
     @Deprecated(
         message = "The app now uses an allowlist. Read allowedApps instead.",

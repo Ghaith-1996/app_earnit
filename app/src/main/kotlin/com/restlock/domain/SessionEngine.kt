@@ -16,7 +16,7 @@ import kotlin.time.Duration
  *    └─ finishWorkout()           ──▶ Idle
  *
  *  AwaitingDecision
- *    ├─ exerciseDone()            ──▶ Resting (remaining = chosenRest, setsCompleted +1)
+ *    ├─ exerciseDone()            ──▶ Resting (setsCompleted +1), or Idle on the final planned set
  *    ├─ addThirtySeconds()        ──▶ Resting (remaining = 30s, extraRests +1, blockerArmed = false)
  *    └─ finishWorkout()           ──▶ Idle
  *
@@ -29,8 +29,9 @@ import kotlin.time.Duration
 interface SessionEngine {
     val state: StateFlow<SessionState>
 
-    fun startWorkout(rest: Duration)
+    /** A saved plan starts at set 1; null starts an open-ended quick session. Active sessions are preserved. */
+    fun startWorkout(rest: Duration, workout: PlannedWorkout? = null)
     fun addThirtySeconds()
     fun exerciseDone()
-    fun finishWorkout()
+    fun finishWorkout(onFinished: () -> Unit = {})
 }

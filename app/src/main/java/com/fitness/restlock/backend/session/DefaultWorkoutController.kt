@@ -92,12 +92,21 @@ class DefaultWorkoutController(
         }
     }
 
-    override fun startWorkout() {
-        enqueue {
+    override suspend fun startWorkout(restSeconds: Int, plannedSets: Int?): Boolean {
+        return execute {
             val nowMillis = clock.nowMillis()
+            var started = false
             persistAndSyncAlarm {
-                WorkoutSessionReducer.startWorkout(it, nowMillis)
+                if (it.mode != WorkoutMode.Idle || (plannedSets != null && plannedSets <= 0)) {
+                    it
+                } else {
+                    started = true
+                    WorkoutSessionReducer.startWorkout(
+                        WorkoutSessionReducer.setRestDuration(it, restSeconds), nowMillis, plannedSets,
+                    )
+                }
             }
+            started
         }
     }
 
@@ -110,17 +119,21 @@ class DefaultWorkoutController(
         }
     }
 
-    override fun exerciseDone() {
-        enqueue {
+    override suspend fun exerciseDone(): Boolean {
+        return execute {
             val nowMillis = clock.nowMillis()
+            var completedWorkout = false
             persistAndSyncAlarm {
-                WorkoutSessionReducer.exerciseDone(it, nowMillis)
+                val next = WorkoutSessionReducer.exerciseDone(it, nowMillis)
+                completedWorkout = it.mode == WorkoutMode.AwaitingDecision && next.mode == WorkoutMode.Idle
+                next
             }
+            completedWorkout
         }
     }
 
-    override fun finishWorkout() {
-        enqueue {
+    override suspend fun finishWorkout() {
+        execute {
             persistAndSyncAlarm {
                 WorkoutSessionReducer.finishWorkout(it)
             }
@@ -146,6 +159,18 @@ class DefaultWorkoutController(
 
     private fun enqueue(command: suspend () -> Unit) {
         commands.trySend(command)
+    }
+
+    private suspend fun <T> execute(command: suspend () -> T): T {
+        val result = CompletableDeferred<T>()
+        enqueue {
+            try {
+                result.complete(command())
+            } catch (error: Throwable) {
+                result.completeExceptionally(error)
+            }
+        }
+        return result.await()
     }
 
     private suspend fun persistAndSyncAlarm(
@@ -181,6 +206,7 @@ class DefaultWorkoutController(
             permissionStatus = permissionStatus,
             completedSets = effectiveSnapshot.completedSets,
             extraRests = effectiveSnapshot.extraRests,
+            plannedSets = effectiveSnapshot.plannedSets,
         )
     }
 

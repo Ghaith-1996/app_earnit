@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -133,6 +134,7 @@ fun HomeScreen(
                     QuickStartCard(
                         state = state,
                         onQuickStart = openRestSetup,
+                        onStartSavedWorkout = openWorkoutLaunch,
                         onOpenRestSetup = openRestSetup,
                         onOpenWorkout = onOpenWorkout,
                         onOpenAppPicker = onOpenAppPicker,
@@ -288,6 +290,7 @@ private fun PermissionBanner(
 private fun QuickStartCard(
     state: HomeUiState,
     onQuickStart: () -> Unit,
+    onStartSavedWorkout: () -> Unit,
     onOpenRestSetup: () -> Unit,
     onOpenWorkout: () -> Unit,
     onOpenAppPicker: () -> Unit,
@@ -312,6 +315,13 @@ private fun QuickStartCard(
                 leadingIcon = Icons.Rounded.PlayArrow,
                 brush = PrimaryBrush,
             )
+            if (state.savedWorkouts.isNotEmpty()) {
+                SecondaryAction(
+                    label = "Start saved workout",
+                    onClick = onStartSavedWorkout,
+                    leadingIcon = Icons.Rounded.PlayArrow,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SecondaryAction(
                     label = state.chosenRest.toCompactLabel(),
@@ -578,8 +588,14 @@ private fun WorkoutChoiceSheet(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                workouts.forEach { workout ->
+            Column(
+                modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                workouts.filter { workout ->
+                    workout.exercises.isNotEmpty() &&
+                        workout.exercises.all { ExerciseCatalog.byId(it.exerciseId) != null }
+                }.forEach { workout ->
                     WorkoutChoiceRow(
                         workout = workout,
                         calories = FitnessCalculator.caloriesForPlannedExercises(workout.exercises, profile),
@@ -816,7 +832,7 @@ private fun ActionDock(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 PrimaryAction(
-                    label = "Exercise done",
+                    label = if (state.session.isFinalSet) "Finish final set" else "Exercise done",
                     onClick = onExerciseDone,
                     leadingIcon = Icons.Rounded.CheckCircle,
                     brush = MintBrush,

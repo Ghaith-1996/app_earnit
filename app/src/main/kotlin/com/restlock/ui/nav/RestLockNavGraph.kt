@@ -1,6 +1,8 @@
 package com.restlock.ui.nav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -31,9 +33,10 @@ fun RestLockNavGraph(
     navController: NavHostController = rememberNavController(),
     startDestination: String = Routes.Home,
 ) {
+    val homeViewModel: HomeViewModel = viewModel(factory = factory)
+    val homeState by homeViewModel.uiState.collectAsState()
     NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.Home) {
-            val homeViewModel: HomeViewModel = viewModel(factory = factory)
             HomeScreen(
                 viewModel = homeViewModel,
                 onOpenAppPicker = { navController.navigate(Routes.AppPicker) },
@@ -46,6 +49,11 @@ fun RestLockNavGraph(
             val workoutViewModel: WorkoutViewModel = viewModel(factory = factory)
             WorkoutScreen(
                 viewModel = workoutViewModel,
+                sessionActive = homeState.session.isInSession,
+                onStartSavedWorkout = { workout ->
+                    homeViewModel.startSavedWorkout(workout.id, homeState.chosenRest)
+                    navController.navigateTopLevel(Routes.Home)
+                },
                 onHome = { navController.navigateTopLevel(Routes.Home) },
                 onSettings = { navController.navigateTopLevel(Routes.Settings) },
             )
@@ -59,7 +67,6 @@ fun RestLockNavGraph(
             )
         }
         composable(Routes.Permissions) {
-            val homeViewModel: HomeViewModel = viewModel(factory = factory)
             PermissionOnboardingScreen(
                 viewModel = homeViewModel,
                 onContinue = {

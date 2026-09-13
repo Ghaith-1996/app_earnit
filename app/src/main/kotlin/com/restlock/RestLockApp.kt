@@ -51,7 +51,7 @@ class RestLockApp : RestLockApplication() {
         installedAppsProvider = BackendInstalledAppsProvider(
             RestLockBackend.installedApps(this),
         )
-        sessionEngine = BackendSessionEngine(controller)
+        sessionEngine = BackendSessionEngine(controller, fitnessRepository, appScope)
         CreatorSupportRewardedAd.initialize(this)
     }
 }

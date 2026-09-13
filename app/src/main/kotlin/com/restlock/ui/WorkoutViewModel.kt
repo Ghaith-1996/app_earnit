@@ -182,7 +182,9 @@ class WorkoutViewModel(
             } else {
                 val moved = exercises.removeAt(from)
                 exercises.add(to, moved)
-                current.copy(plannedExercises = exercises.normalizedWorkoutExercises())
+                current.copy(plannedExercises = exercises.mapIndexed { index, exercise ->
+                    exercise.copy(rank = index + 1)
+                })
             }
         }
     }
@@ -223,12 +225,6 @@ class WorkoutViewModel(
             fitnessRepository.saveWorkout(workout)
             fitnessRepository.logWorkout(workout.toLog(uiState.value.profile))
             closeBuilder()
-        }
-    }
-
-    fun logSavedWorkout(workout: PlannedWorkout) {
-        viewModelScope.launch {
-            fitnessRepository.logWorkout(workout.toLog(uiState.value.profile))
         }
     }
 

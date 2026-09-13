@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -88,7 +89,7 @@ class HomeViewModel(
         fitnessRepository.savedWorkouts,
         fitnessRepository.activeWorkoutId,
     ) { base, logs, profile, savedWorkouts, activeWorkoutId ->
-        val activeWorkout = savedWorkouts.firstOrNull { it.id == activeWorkoutId }
+        val activeWorkout = savedWorkouts.firstOrNull { base.session.isInSession && it.id == activeWorkoutId }
         HomeUiState(
             session = base.session,
             chosenRest = base.chosenRest,
@@ -132,31 +133,21 @@ class HomeViewModel(
     }
 
     fun startWorkout(rest: Duration) {
-        viewModelScope.launch {
-            fitnessRepository.setActiveWorkoutId(null)
-            settingsRepository.setChosenRest(rest)
-            sessionEngine.startWorkout(rest)
-        }
+        sessionEngine.startWorkout(rest)
     }
 
     fun startSavedWorkout(workoutId: String, rest: Duration) {
-        val workout = uiState.value.savedWorkouts.firstOrNull { it.id == workoutId } ?: return
         viewModelScope.launch {
-            fitnessRepository.setActiveWorkoutId(workout.id)
-            settingsRepository.setChosenRest(rest)
-            sessionEngine.startWorkout(rest)
+            val workout = fitnessRepository.savedWorkouts.first().firstOrNull { it.id == workoutId }
+                ?: return@launch
+            sessionEngine.startWorkout(rest, workout)
         }
     }
 
     fun addThirtySeconds() = sessionEngine.addThirtySeconds()
     fun exerciseDone() = sessionEngine.exerciseDone()
     fun finishWorkout() {
-        viewModelScope.launch {
-            runCatching {
-                fitnessRepository.logActiveWorkoutAndClear(System.currentTimeMillis())
-            }
-            sessionEngine.finishWorkout()
-        }
+        sessionEngine.finishWorkout()
     }
 
     fun refreshPermissions() {

@@ -25,12 +25,16 @@ object WorkoutSessionReducer {
     fun startWorkout(
         snapshot: WorkoutSessionSnapshot,
         nowMillis: Long,
+        plannedSets: Int? = null,
     ): WorkoutSessionSnapshot {
+        if (snapshot.mode != WorkoutMode.Idle) return snapshot
+        if (plannedSets != null && plannedSets <= 0) return snapshot
         return snapshot.copy(
             mode = WorkoutMode.Resting,
             timerEndEpochMillis = nowMillis + snapshot.restDurationSeconds * 1_000L,
             completedSets = 0,
             extraRests = 0,
+            plannedSets = plannedSets,
         )
     }
 
@@ -51,6 +55,9 @@ object WorkoutSessionReducer {
         nowMillis: Long,
     ): WorkoutSessionSnapshot {
         if (snapshot.mode != WorkoutMode.AwaitingDecision) return snapshot
+        if (snapshot.plannedSets != null && snapshot.completedSets + 1 >= snapshot.plannedSets) {
+            return finishWorkout(snapshot)
+        }
         return snapshot.copy(
             mode = WorkoutMode.Resting,
             timerEndEpochMillis = nowMillis + snapshot.restDurationSeconds * 1_000L,
@@ -64,6 +71,7 @@ object WorkoutSessionReducer {
             timerEndEpochMillis = 0L,
             completedSets = 0,
             extraRests = 0,
+            plannedSets = null,
         )
     }
 

@@ -2,6 +2,7 @@ package com.restlock.domain.fake
 
 import com.restlock.domain.SessionEngine
 import com.restlock.domain.SessionState
+import com.restlock.domain.PlannedWorkout
 import com.restlock.domain.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -37,7 +38,8 @@ class FakeSessionEngine(
 
     private var ticker: Job? = null
 
-    override fun startWorkout(rest: Duration) {
+    override fun startWorkout(rest: Duration, workout: PlannedWorkout?) {
+        if (_state.value.isInSession || workout?.exercises?.isEmpty() == true) return
         cancelTicker()
         _state.value = SessionState(
             phase = SessionState.Phase.Resting,
@@ -46,6 +48,7 @@ class FakeSessionEngine(
             setsCompleted = 0,
             extraRests = 0,
             blockerArmed = false,
+            plannedSets = workout?.totalSets,
         )
         startCountdown(rest, onExpire = { armDecision() })
     }
@@ -66,6 +69,10 @@ class FakeSessionEngine(
     override fun exerciseDone() {
         val current = _state.value
         if (current.phase != SessionState.Phase.AwaitingDecision) return
+        if (current.isFinalSet) {
+            finishWorkout()
+            return
+        }
         cancelTicker()
         _state.value = current.copy(
             phase = SessionState.Phase.Resting,
@@ -76,7 +83,7 @@ class FakeSessionEngine(
         startCountdown(current.chosenRest, onExpire = { armDecision() })
     }
 
-    override fun finishWorkout() {
+    override fun finishWorkout(onFinished: () -> Unit) {
         cancelTicker()
         val previous = _state.value
         _state.value = SessionState(
@@ -93,6 +100,7 @@ class FakeSessionEngine(
             val saved = settingsRepository.chosenRest.first()
             _state.value = _state.value.copy(chosenRest = saved)
         }
+        onFinished()
     }
 
     private fun armDecision() {

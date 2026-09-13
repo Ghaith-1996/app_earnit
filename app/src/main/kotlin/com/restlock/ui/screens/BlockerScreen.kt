@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.restlock.ui.components.GlassCard
+import com.restlock.domain.ActiveExercisePreview
 import com.restlock.ui.components.PrimaryAction
 import com.restlock.ui.components.SecondaryAction
 import com.restlock.ui.theme.BackdropBrush
@@ -47,6 +48,8 @@ fun BlockerScreen(
     setsCompleted: Int,
     extraRests: Int,
     blockedAppLabel: String?,
+    isFinalSet: Boolean,
+    preview: ActiveExercisePreview?,
     onExerciseDone: () -> Unit,
     onAddThirtySeconds: () -> Unit,
     onFinishWorkout: () -> Unit,
@@ -67,11 +70,12 @@ fun BlockerScreen(
         ) {
             BlockerHeader(blockedAppLabel = blockedAppLabel)
 
-            BlockerHero()
+            BlockerHero(preview)
 
             BlockerActions(
                 setsCompleted = setsCompleted,
                 extraRests = extraRests,
+                isFinalSet = isFinalSet,
                 onExerciseDone = onExerciseDone,
                 onAddThirtySeconds = onAddThirtySeconds,
                 onFinishWorkout = onFinishWorkout,
@@ -104,7 +108,7 @@ private fun BlockerHeader(blockedAppLabel: String?) {
 }
 
 @Composable
-private fun BlockerHero() {
+private fun BlockerHero(preview: ActiveExercisePreview?) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -143,6 +147,14 @@ private fun BlockerHero() {
                 color = RestLockPalette.TextMid,
                 textAlign = TextAlign.Center,
             )
+            if (preview != null) {
+                Text(
+                    text = "${preview.definition.name}\nSet ${preview.setNumberForExercise}/${preview.totalSetsForExercise} · ${preview.plannedExercise.reps} reps",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = RestLockPalette.Mint,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -151,6 +163,7 @@ private fun BlockerHero() {
 private fun BlockerActions(
     setsCompleted: Int,
     extraRests: Int,
+    isFinalSet: Boolean,
     onExerciseDone: () -> Unit,
     onAddThirtySeconds: () -> Unit,
     onFinishWorkout: () -> Unit,
@@ -168,7 +181,7 @@ private fun BlockerActions(
         }
 
         PrimaryAction(
-            label = "Exercise done",
+            label = if (isFinalSet) "Finish final set" else "Exercise done",
             onClick = onExerciseDone,
             leadingIcon = Icons.Rounded.CheckCircle,
             brush = MintBrush,

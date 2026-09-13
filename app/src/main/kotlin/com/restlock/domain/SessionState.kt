@@ -20,8 +20,12 @@ data class SessionState(
     val extraRests: Int = 0,
     /** True while the lock is actively suppressing blocked apps (only in AwaitingDecision). */
     val blockerArmed: Boolean = false,
+    /** Null for an open-ended quick session. Persisted for saved workouts. */
+    val plannedSets: Int? = null,
 ) {
     enum class Phase { Idle, Resting, AwaitingDecision }
 
     val isInSession: Boolean get() = phase != Phase.Idle
+    val isFinalSet: Boolean
+        get() = isInSession && plannedSets != null && setsCompleted + 1 >= plannedSets
 }

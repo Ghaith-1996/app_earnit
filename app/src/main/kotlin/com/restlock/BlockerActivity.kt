@@ -50,6 +50,7 @@ class BlockerActivity : ComponentActivity() {
             RestLockTheme {
                 val vm: BlockerViewModel = viewModel(factory = factory)
                 val state by vm.sessionState.collectAsState()
+                val preview by vm.activeExercisePreview.collectAsState()
                 var supportDialogOpen by remember { mutableStateOf(false) }
 
                 LaunchedEffect(state.phase) {
@@ -65,13 +66,13 @@ class BlockerActivity : ComponentActivity() {
                         setsCompleted = state.setsCompleted,
                         extraRests = state.extraRests,
                         blockedAppLabel = blockedAppLabel,
+                        isFinalSet = state.isFinalSet,
+                        preview = preview,
                         onExerciseDone = {
                             vm.exerciseDone()
-                            finish()
                         },
                         onAddThirtySeconds = {
                             vm.addThirtySeconds()
-                            finish()
                         },
                         onFinishWorkout = {
                             supportDialogOpen = true

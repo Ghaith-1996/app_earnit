@@ -7,6 +7,56 @@ import org.junit.Test
 
 class WorkoutSessionReducerTest {
     @Test
+    fun finalSetEndsWithoutAnotherRest() {
+        val finalSet = WorkoutSessionSnapshot(
+            mode = WorkoutMode.AwaitingDecision,
+            completedSets = 4,
+            plannedSets = 5,
+        )
+        val finished = WorkoutSessionReducer.exerciseDone(finalSet, 10_000L)
+        assertEquals(WorkoutMode.Idle, finished.mode)
+        assertEquals(0L, finished.timerEndEpochMillis)
+        assertEquals(0, finished.completedSets)
+        assertEquals(null, finished.plannedSets)
+        assertEquals(finished, WorkoutSessionReducer.exerciseDone(finished, 10_001L))
+        assertEquals(finished, WorkoutSessionReducer.addThirtySecondsRest(finished, 10_001L))
+    }
+
+    @Test
+    fun oneSetWorkoutAndRestExtensionKeepTheFinalSetPendingUntilDone() {
+        val initial = WorkoutSessionReducer.startWorkout(
+            WorkoutSessionSnapshot(), 0L, plannedSets = 1,
+        )
+        assertEquals(WorkoutMode.Resting, initial.mode)
+        assertEquals(0, initial.completedSets)
+        val decision = WorkoutSessionReducer.expireIfNeeded(initial, 90_000L)
+        val extra = WorkoutSessionReducer.addThirtySecondsRest(decision, 90_000L)
+        assertEquals(WorkoutMode.Resting, extra.mode)
+        assertEquals(0, extra.completedSets)
+        assertEquals(1, extra.plannedSets)
+        assertEquals(120_000L, extra.timerEndEpochMillis)
+        val finalDecision = WorkoutSessionReducer.expireIfNeeded(extra, 120_000L)
+        assertEquals(WorkoutMode.Idle, WorkoutSessionReducer.exerciseDone(finalDecision, 120_000L).mode)
+    }
+
+    @Test
+    fun duplicateSetAndExtensionCommandsCannotAdvanceWhileRestingOrIdle() {
+        for (mode in listOf(WorkoutMode.Idle, WorkoutMode.Resting)) {
+            val snapshot = WorkoutSessionSnapshot(mode = mode, completedSets = 1, plannedSets = 3)
+            assertEquals(snapshot, WorkoutSessionReducer.exerciseDone(snapshot, 0L))
+            assertEquals(snapshot, WorkoutSessionReducer.addThirtySecondsRest(snapshot, 0L))
+        }
+    }
+
+    @Test
+    fun startingAgainDoesNotReplaceAnActiveSession() {
+        for (mode in listOf(WorkoutMode.Resting, WorkoutMode.AwaitingDecision)) {
+            val active = WorkoutSessionSnapshot(mode = mode, completedSets = 2)
+            assertEquals(active, WorkoutSessionReducer.startWorkout(active, 1_000L))
+        }
+    }
+
+    @Test
     fun startWorkoutStartsRestAndResetsCompletedSets() {
         val snapshot = WorkoutSessionSnapshot(
             restDurationSeconds = 60,
