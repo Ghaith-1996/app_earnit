@@ -7,26 +7,76 @@ plugins {
 }
 
 val keystoreFile = rootProject.file("key/key")
+val keystorePropertiesFile = rootProject.file("key/keystore.properties")
 val keystoreProps = Properties().apply {
-    val propsFile = rootProject.file("key/keystore.properties")
-    if (propsFile.exists()) {
-        propsFile.inputStream().use { load(it) }
+    if (keystorePropertiesFile.isFile) {
+        keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
 val releaseSigningKeys = listOf("storePassword", "keyAlias", "keyPassword")
-val hasReleaseSigning = keystoreFile.exists() &&
-    releaseSigningKeys.all { !keystoreProps.getProperty(it).isNullOrBlank() }
+val releaseSigningProblems = buildList {
+    if (!keystoreFile.isFile) add("Missing keystore: key/key")
+    if (!keystorePropertiesFile.isFile) add("Missing credentials: key/keystore.properties")
+    releaseSigningKeys.filter { keystoreProps.getProperty(it).isNullOrBlank() }
+        .forEach { add("Missing signing property: $it") }
+}
+val hasReleaseSigning = releaseSigningProblems.isEmpty()
+
+// Keep explicit release versions. Check Play Console before every upload.
+val releaseVersionCode = 1
+val releaseVersionName = "1.0"
+val lastUploadedVersionCode = providers.gradleProperty("lastUploadedVersionCode").orNull
+require(releaseVersionCode > 0) { "versionCode must be a positive integer." }
+if (lastUploadedVersionCode != null) {
+    val previous = lastUploadedVersionCode.toIntOrNull()
+    require(previous != null && previous >= 0) {
+        "lastUploadedVersionCode must be a non-negative integer from Play Console."
+    }
+    require(releaseVersionCode > previous) {
+        "versionCode must be greater than lastUploadedVersionCode. Update app/build.gradle.kts."
+    }
+}
+
+// A typed task keeps validation compatible with Gradle's configuration cache.
+abstract class ValidateReleaseSigning : DefaultTask() {
+    @get:Input
+    abstract val problems: ListProperty<String>
+
+    @TaskAction
+    fun validate() {
+        if (problems.get().isNotEmpty()) {
+            throw GradleException(
+                "Release signing is not configured.\n" +
+                    problems.get().joinToString("\n") +
+                    "\nCreate key/keystore.properties using key/keystore.properties.example " +
+                    "and supply the existing production keystore at key/key. " +
+                    "Use assembleDebug for local development.",
+            )
+        }
+    }
+}
+
+val validateProductionSigning = tasks.register<ValidateReleaseSigning>("validateProductionSigning") {
+    group = "verification"
+    description = "Reject release builds when production signing is unavailable."
+    problems.set(releaseSigningProblems)
+}
+
+// Wire prerequisites, not command-line name matching, so aggregate/qualified tasks are safe too.
+tasks.matching { it.name == "preReleaseBuild" || it.name == "validateSigningRelease" }.configureEach {
+    dependsOn(validateProductionSigning)
+}
 
 android {
     namespace = "com.fitness.restlock"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.fitness.restlock"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 36
+        versionCode = releaseVersionCode
+        versionName = releaseVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["admobApplicationId"] = "ca-app-pub-3940256099942544~3347511713"
@@ -86,10 +136,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Keep local release APKs sideloadable even before private release signing is configured.
-            signingConfig = signingConfigs.getByName(
-                if (hasReleaseSigning) "release" else "debug",
-            )
+            // Missing credentials fail via validateProductionSigning; never use the debug key.
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
