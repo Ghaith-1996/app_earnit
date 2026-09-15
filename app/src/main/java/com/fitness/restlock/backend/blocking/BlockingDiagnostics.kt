@@ -14,6 +14,10 @@ object BlockingDiagnostics {
     private val _state = MutableStateFlow(BlockingDiagnosticsState())
     val state: StateFlow<BlockingDiagnosticsState> = _state
 
+    fun reset() {
+        _state.value = BlockingDiagnosticsState()
+    }
+
     fun updateLockActive(lockActive: Boolean) {
         _state.update { it.copy(lockActive = lockActive) }
     }

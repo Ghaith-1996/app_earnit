@@ -1,87 +1,84 @@
 package com.fitness.restlock.backend.blocking
 
 import android.accessibilityservice.AccessibilityService
+import android.content.pm.ApplicationInfo
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.fitness.restlock.backend.RestLockBackend
 import com.fitness.restlock.backend.WorkoutMode
-import com.fitness.restlock.backend.WorkoutState
 import com.restlock.BlockerActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class AppBlockerAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val policy: AppBlockPolicy by lazy { AndroidAppBlockPolicy(this) }
-    private var lastLaunchedPackage: String? = null
-    private var lastLaunchElapsedMillis: Long = 0L
-    private var currentForegroundPackage: String? = null
+    private val controller by lazy { RestLockBackend.controller(this) }
+    private val debugDiagnostics by lazy { applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 }
+    private var stateCollection: Job? = null
+    private val launchCoordinator by lazy {
+        BlockerLaunchCoordinator(
+            policy = policy,
+            scope = serviceScope,
+            currentState = { controller.state.value },
+            elapsedRealtime = SystemClock::elapsedRealtime,
+            goHome = { performGlobalAction(GLOBAL_ACTION_HOME); Unit },
+            openBlocker = { packageName ->
+                runCatching { startActivity(blockerIntent(packageName)) }
+                    .onSuccess {
+                        if (debugDiagnostics) {
+                            BlockingDiagnostics.updateLastBlocked(packageName)
+                            Log.d(TAG, "blocking package=$packageName")
+                        }
+                    }
+                    .onFailure { if (debugDiagnostics) Log.w(TAG, "Blocker launch failed", it) }
+                    .isSuccess
+            },
+        )
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        serviceScope.launch {
-            RestLockBackend.controller(this@AppBlockerAccessibilityService)
-                .state
-                .collectLatest { state ->
+        stateCollection?.cancel()
+        launchCoordinator.reset()
+        stateCollection = serviceScope.launch {
+            controller.state.collect { state ->
+                if (debugDiagnostics) {
                     BlockingDiagnostics.updateLockActive(state.mode == WorkoutMode.AwaitingDecision)
                     Log.d(TAG, "state=${state.mode}, allowed=${state.allowedApps.size}")
-                    maybeLaunchBlocker(currentForegroundPackage, state)
                 }
+                launchCoordinator.onStateChanged()
+            }
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val packageName = event?.packageName?.toString() ?: return
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
-        ) {
-            return
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (controller.state.value.mode == WorkoutMode.Idle) return
+        // Package metadata only: no source nodes, text, or window-content APIs.
+        val packageName = event.packageName?.toString()
+        if (debugDiagnostics && !packageName.isNullOrBlank()) {
+            BlockingDiagnostics.updateLastDetected(packageName)
+            Log.d(TAG, "detected package=$packageName event=${event.eventType}")
         }
-
-        currentForegroundPackage = packageName
-        BlockingDiagnostics.updateLastDetected(packageName)
-        Log.d(TAG, "detected package=$packageName event=${event.eventType}")
-        val state = RestLockBackend.controller(this).state.value
-        maybeLaunchBlocker(packageName, state)
+        launchCoordinator.onForegroundPackageChanged(packageName)
     }
 
     override fun onDestroy() {
+        launchCoordinator.reset()
+        if (debugDiagnostics) BlockingDiagnostics.reset()
         serviceScope.cancel()
         super.onDestroy()
     }
 
-    override fun onInterrupt() = Unit
-
-    private fun maybeLaunchBlocker(
-        packageName: String?,
-        state: WorkoutState,
-    ) {
-        val lockActive = state.mode == WorkoutMode.AwaitingDecision
-        if (!policy.shouldBlock(packageName, state.allowedApps, lockActive)) return
-        val blockedPackage = packageName ?: return
-        if (isLaunchThrottled(blockedPackage)) return
-
-        lastLaunchedPackage = blockedPackage
-        lastLaunchElapsedMillis = android.os.SystemClock.elapsedRealtime()
-        currentForegroundPackage = null
-        BlockingDiagnostics.updateLastBlocked(blockedPackage)
-        Log.d(TAG, "blocking package=$blockedPackage")
-        performGlobalAction(GLOBAL_ACTION_HOME)
-        serviceScope.launch {
-            delay(BLOCKER_LAUNCH_DELAY_MILLIS)
-            startActivity(blockerIntent(blockedPackage))
-        }
-    }
-
-    private fun isLaunchThrottled(packageName: String): Boolean {
-        val now = android.os.SystemClock.elapsedRealtime()
-        return packageName == lastLaunchedPackage &&
-            now - lastLaunchElapsedMillis < LAUNCH_THROTTLE_MILLIS
+    override fun onInterrupt() {
+        launchCoordinator.reset()
+        if (debugDiagnostics) BlockingDiagnostics.reset()
     }
 
     private fun blockerIntent(packageName: String): android.content.Intent {
@@ -99,7 +96,5 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     private companion object {
         const val TAG = "RestLockBlocker"
-        const val LAUNCH_THROTTLE_MILLIS = 1_000L
-        const val BLOCKER_LAUNCH_DELAY_MILLIS = 120L
     }
 }

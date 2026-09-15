@@ -11,7 +11,8 @@ class AppBlockPolicyTest {
             "com.fitness.restlock",
             "com.android.settings",
             "com.launcher",
-        ),
+        ) + KnownExemptPackages.coreSystemPackages +
+            KnownExemptPackages.commonLauncherPackages + KnownExemptPackages.commonHomeSurfacePackages,
     )
 
     @Test
@@ -75,5 +76,36 @@ class AppBlockPolicyTest {
         )
 
         assertEquals(setOf("com.social.app", "com.video.app"), result)
+    }
+
+    @Test
+    fun missingOrBlankPackagesNeverBlock() {
+        listOf(null, "", "  ").forEach {
+            assertFalse(policy.shouldBlock(it, emptySet(), true))
+        }
+    }
+
+    @Test
+    fun strictModePreservesHostAndEssentialSurfaces() {
+        val packages = setOf(
+            "com.fitness.restlock", "com.launcher", "android", "com.android.settings",
+            "com.android.systemui", "com.android.permissioncontroller",
+            "com.google.android.permissioncontroller", "com.android.packageinstaller",
+            "com.google.android.packageinstaller", "com.android.phone", "com.android.server.telecom",
+            "com.android.dialer", "com.google.android.dialer", "com.android.emergency",
+            "com.samsung.android.dialer", "com.samsung.android.incallui",
+            "com.android.incallui", "com.sec.android.app.launcher",
+            "com.google.android.apps.nexuslauncher", "com.google.android.googlequicksearchbox",
+            "com.samsung.android.app.galaxyfinder",
+        )
+        packages.forEach {
+            assertFalse("Essential package must remain usable: $it", policy.shouldBlock(it, emptySet(), true))
+        }
+        assertTrue(policy.shouldBlock("com.social.app", emptySet(), true))
+    }
+
+    @Test
+    fun allowlistDoesNotPermitUnselectedApps() {
+        assertTrue(policy.shouldBlock("com.social.app", setOf("com.video.app"), true))
     }
 }

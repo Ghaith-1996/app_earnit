@@ -16,6 +16,8 @@ import com.restlock.domain.*
 import com.restlock.domain.backend.BackendSessionEngine
 import com.restlock.domain.backend.BackendFitnessRepository
 import com.restlock.domain.fake.FakeSettingsRepository
+import com.restlock.BlockerLifecycleAction
+import com.restlock.blockerLifecycleAction
 import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -306,6 +308,75 @@ class WorkoutFinishLoggingTest {
         f.blocker.finishWorkout()
         runCurrent()
         assertThat(f.repository.workoutLogs.value).hasSize(2)
+    }
+
+    @Test
+    fun `blocker dismisses after set done and thirty second rest disarm the real session`() = runTest {
+        val f = fixture()
+        f.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        f.blocker.exerciseDone()
+        runCurrent()
+        assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Resting)
+        assertThat(f.engine.state.value.blockerArmed).isFalse()
+        assertThat(blockerLifecycleAction(f.engine.state.value, f.blocker.completion.value, false))
+            .isEqualTo(BlockerLifecycleAction.Dismiss)
+
+        advanceTimeBy(5_000)
+        runCurrent()
+        f.blocker.addThirtySeconds()
+        runCurrent()
+        assertThat(f.engine.state.value.phase).isEqualTo(SessionState.Phase.Resting)
+        assertThat(f.engine.state.value.remaining).isEqualTo(30.seconds)
+        assertThat(f.engine.state.value.blockerArmed).isFalse()
+        assertThat(blockerLifecycleAction(f.engine.state.value, f.blocker.completion.value, false))
+            .isEqualTo(BlockerLifecycleAction.Dismiss)
+    }
+
+    @Test
+    fun `blocker follows an elsewhere finish without losing saved summary or quick support`() = runTest {
+        val saved = fixture()
+        saved.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        saved.home.finishWorkout()
+        runCurrent()
+        assertFinished(saved)
+        assertThat(blockerLifecycleAction(saved.engine.state.value, saved.blocker.completion.value, true))
+            .isEqualTo(BlockerLifecycleAction.OpenSummary)
+
+        val quick = fixture()
+        quick.home.startWorkout(5.seconds)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        quick.home.finishWorkout()
+        runCurrent()
+        assertFinished(quick)
+        assertThat(blockerLifecycleAction(quick.engine.state.value, quick.blocker.completion.value, false))
+            .isEqualTo(BlockerLifecycleAction.Dismiss)
+
+        val failedSave = fixture()
+        failedSave.repository.failLogging = true
+        failedSave.home.startSavedWorkout("legs", 5.seconds)
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        failedSave.blocker.finishWorkout()
+        runCurrent()
+        assertThat(failedSave.engine.state.value.phase).isEqualTo(SessionState.Phase.Idle)
+        assertThat(failedSave.engine.state.value.blockerArmed).isFalse()
+        assertThat(failedSave.alarm.deadline).isNull()
+        assertThat(failedSave.blocker.completion.value).isEqualTo(BlockerCompletion.Finished(null))
+        assertThat(blockerLifecycleAction(
+            failedSave.engine.state.value,
+            failedSave.blocker.completion.value,
+            false,
+        )).isEqualTo(BlockerLifecycleAction.ShowSupport)
     }
 
     @Test
