@@ -13,11 +13,31 @@ runnable today.
 
 ## Run
 
-Open the project in Android Studio (Hedgehog or newer), let Gradle sync, then
+Open the project in Android Studio (Meerkat Feature Drop 2024.3.2 or newer), let Gradle sync, then
 run the `app` configuration on an Android 8.0+ device or emulator.
 
-There is no API key, no network, no signing — the debug build installs as
-`com.restlock.debug`.
+Debug builds need no production signing credentials and use Google's test AdMob
+configuration. Both variants use `com.fitness.restlock` with no debug suffix;
+Android will not install differently signed variants over each other. Preserve
+local data before uninstalling a variant to switch signing identities.
+
+Build configuration: min SDK **26**, compile/target SDK **36**, AGP **8.10.0**,
+Gradle **8.11.1**, Kotlin and Compose compiler plugin **2.2.0**. The active plugin
+versions are in the root `build.gradle.kts`; this project does not currently use
+the plugin aliases in `gradle/libs.versions.toml`.
+
+Install Android SDK Platform 36. For terminal builds, set `JAVA_HOME` to a
+compatible JDK (17 or newer supported by Gradle). On this Windows checkout:
+
+```powershell
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+.\gradlew.bat clean testDebugUnitTest lintDebug assembleDebug
+```
+
+`gradle.properties` currently selects the Android Studio JDK at that same Windows
+path; on another machine, override `org.gradle.java.home` with your JDK location.
+If Windows `clean` reports locked lint-cache JARs, run `.\gradlew.bat --stop`
+and retry the build with `--no-daemon` to release the cached file handles.
 
 ## Project layout
 
@@ -140,18 +160,66 @@ properties file is in place:
 ./gradlew :app:assembleRelease   # produces app/build/outputs/apk/release/app-release.apk
 ```
 
-If `key/key` or `key/keystore.properties` are absent the release build uses
-Android's debug signing key so `assembleRelease` still produces an installable
-APK for local sideload testing. Do not upload that debug-signed APK to a store;
-add the real `key/keystore.properties` file first so Gradle uses the release
-keystore.
+Both `bundleRelease` and `assembleRelease` require the existing production
+keystore and all three nonblank signing properties. `validateProductionSigning`
+fails clearly if any are missing, including when release tasks are reached via
+an aggregate task. There is no debug signing fallback. Invalid credentials also
+fail Android's signing validation. Use `assembleDebug` for local builds without
+production credentials. Never regenerate or replace the production keystore.
+Both `key/key` and `key/keystore.properties` are Git-ignored; only the empty
+template belongs in Git. Do not include credential values in logs or commits.
 
-Version metadata lives in `app/build.gradle.kts` (`versionCode` /
-`versionName`). Bump `versionCode` for every store upload.
+Debug uses Google's sample AdMob application and rewarded unit IDs; release uses
+the existing production IDs. Verify the merged manifest and generated resources
+for each variant without copying production IDs into reports.
+
+### Versioning and production verification
+
+Version metadata is explicit in `app/build.gradle.kts`: `releaseVersionCode = 1`
+and `releaseVersionName = "1.0"`. The first-release values are preserved because
+the repository does not establish a previous Play upload. The production
+application ID remains `com.fitness.restlock`.
+
+**Every Play upload requires an integer versionCode greater than the highest
+previously uploaded versionCode**, including testing tracks. Check Play Console,
+update `releaseVersionCode`, and pass that previous value to enforce the comparison:
+
+```text
+./gradlew bundleRelease -PlastUploadedVersionCode=<highest-code-from-Play-Console>
+```
+
+Use `0` only when there have been no uploads. A missing comparison property is
+allowed for local builds; Gradle cannot discover your Play upload history.
+Malformed, negative, equal, or greater previous codes fail the build. Keep the
+user-facing `versionName` aligned with the intended release; there is no automatic
+timestamp or version generation.
+
+Before uploading an AAB:
+
+1. Run `clean`, `testDebugUnitTest`, `lintDebug`, and `assembleDebug`.
+2. Run `bundleRelease` with production signing configured and the previous upload
+   code supplied as above. Confirm `app/build/outputs/bundle/release/app-release.aab`
+   exists and record its size.
+3. Use `jarsigner -verify` and `keytool -printcert -jarfile` on the AAB to verify
+   its signature and confirm its signer is the expected production certificate,
+   not the Android debug certificate. Never share private key material.
+4. Use `bundletool dump manifest --bundle=<aab> --module=base` to verify the
+   package, min SDK 26, target SDK 36, and expected version code/name in the
+   artifact. Verify release AdMob resources as well.
+5. Smoke-test on Android 16: system-bar insets/back navigation, rest expiration,
+   process restoration, the blocker decision screen, saved workout completion
+   and history, and the rewarded ad flow. Blocking must remain exclusive to
+   `AwaitingDecision`, never `Idle` or `Resting`.
+
+If production signing is unavailable, a failed `bundleRelease` with the explicit
+signing error is the expected safety result; no release artifact is ready for
+upload. Do not substitute a debug-signed artifact.
+
+Compatibility references: [Android SDK / AGP / Gradle requirements](https://developer.android.com/build/releases/about-agp)
+and [Android 16 behavior changes](https://developer.android.com/about/versions/16/behavior-changes-16).
 
 ## Notes
 
-- First release is a private APK, not a Play submission.
 - This blocks only the selected apps; whole-device kiosk is out of scope.
 - Package visibility is restricted to launchable apps (no
   `QUERY_ALL_PACKAGES`) per Play policy.
