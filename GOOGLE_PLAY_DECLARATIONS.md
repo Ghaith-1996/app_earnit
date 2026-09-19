@@ -1,65 +1,70 @@
-# Google Play Compliance Drafts
+# Earn it! — Google Play declaration drafts
 
-These drafts are written for the current app behavior. Review them again before submitting to Google Play.
+Source reviewed: September 19, 2026. These are repository drafts, not submitted forms or a guarantee of approval. Package: `com.fitness.restlock`.
 
-## Accessibility API Declaration
+## Accessibility API declaration
 
-Fitness Rest Lock uses AccessibilityService for its core app-locking feature. During a workout, the user selects apps that are allowed during a lock period. When the rest timer reaches 0:00, the app enters a decision lock. The Accessibility service detects the foreground app package name so the app can determine whether the opened app is allowed. If the foreground app is not allowed, Fitness Rest Lock sends the user back to the Android home screen and opens the workout decision screen with the choices to finish the workout, add 30 seconds of rest, or mark the exercise done.
+Earn it! uses AccessibilityService for its core rest-expiry app-redirection feature. During an active workout, including the rest countdown, the service observes foreground package-name changes from window-state events and temporarily remembers the latest package. This enables redirection when rest expires even if another app is already open. Events are ignored while idle.
 
-The AccessibilityService API is used only while the app is in the decision lock state. It is not used to read messages, passwords, form text, notifications, or screen content for advertising or analytics. Foreground app package detection is processed locally on the device and is not transmitted to a server.
+Normal apps remain usable in `Resting`. Only in `AwaitingDecision`, after the rest timer reaches 0:00, does Earn it! enforce the allowlist. A non-allowed, non-exempt foreground app is redirected through Android Home to the workout decision screen. Actions are **Exercise done**, **Finish final set** on the final planned set, **+30s rest**, and **Finish/Finish workout**. Completing or finishing the session stops blocking; extra rest also stops blocking during its countdown. Essential system packages remain exempt.
 
-This app is not a disability-focused accessibility tool, so it should not declare `isAccessibilityTool=true`.
+Only package metadata is used. Earn it! does not read screen text, messages, passwords, forms, notification contents, browser contents, or Accessibility node trees. `canRetrieveWindowContent=false`, `canPerformGestures=false`; only `typeWindowStateChanged` is requested. Observations remain local and are not passed to advertising or analytics. Release builds do not emit package diagnostics.
 
-## In-App Disclosure Text
+The app is not a disability-focused accessibility tool and does not declare `isAccessibilityTool=true`. First enabling the service requires reviewing an in-app disclosure, selecting the consent checkbox, and opening Android Accessibility settings. The user can disable the service there. See [Google Play's Accessibility policy](https://support.google.com/googleplay/android-developer/answer/10964491) and [disclosure/consent guidance](https://support.google.com/googleplay/android-developer/answer/11150561).
 
-Rest Lock needs Accessibility only to detect blocked apps after your rest timer reaches 0:00. It checks the package name of the app currently in front, compares it with your allowed apps, and returns blocked apps to the workout decision screen. It does not read messages, passwords, form text, notifications, or screen content for ads or analytics. Your rest time, allowed apps, and current session stay on this device.
+## In-app disclosure alignment
 
-## Demo Video Checklist
+`PermissionOnboardingScreen` and `accessibility_service_description` explain active-workout package observation, normal phone use during rest, expiry-only blocking, and no screen-content access. The onboarding also distinguishes local workout/profile/history storage from AdMob network processing. Accessibility consent is not advertising consent.
 
-Record a short video for Play Console showing:
+## Review video checklist
 
-1. The permission onboarding screen and disclosure.
-2. The user checking the consent checkbox.
-3. The user opening Android Accessibility settings and enabling Fitness Rest Lock.
-4. The user starting a workout with a short timer.
-5. The timer reaching 0:00.
-6. The user opening a non-allowed app.
-7. Fitness Rest Lock returning the user to the decision screen.
-8. The user choosing exercise done or finish workout.
+1. Show Earn it!'s disclosure and unchecked consent; demonstrate that first opening Accessibility settings is disabled until consent.
+2. Check consent, open Android Accessibility settings, and enable Earn it!.
+3. Start a short rest timer and use a non-allowed app normally during the countdown.
+4. Remain in that app until 0:00; show redirection to the decision screen.
+5. Show Exercise done and +30s rest returning to an unblocked countdown.
+6. Show Finish final set completing a saved routine and opening its summary/history.
+7. Show Finish workout ending early and removing the lock. Show allowed/essential apps remaining usable.
 
-## Data Safety Draft
+## Local data and Data Safety draft
 
-Suggested starting point for Play Console Data safety:
+Earn it! has no account or remote backend. Its DataStore records include:
 
-- Data collected by the app's own backend: No, because the app has no remote backend.
-- Data collected by third-party SDK: Yes, Google AdMob rewarded ads may collect or process advertising identifiers, device identifiers, IP address, app interactions, and diagnostics according to Google's SDK behavior.
-- Data shared: Yes, advertising-related data may be shared with Google AdMob when ads are loaded or shown.
-- Data processed locally: selected rest duration, allowed app package names, active workout session state, and foreground app package name during decision locks.
-- Account creation: No account.
-- Data deletion: user can uninstall the app or clear app storage in Android settings.
+- Rest settings, allowed package names, current session phase/timer, set counts, extra rests, active routine/start time, and completion recovery information.
+- Saved routine IDs/names/creation times and ordered exercise IDs/sets/reps (up to 30 routines).
+- Workout logs (up to 30): name, timestamps, duration where known, reached exercise count, completed/planned set counts where known, and calorie estimates; plus the pending summary.
+- Profile age, sex, weight, and height for calorie estimates.
 
-Confirm exact Data Safety selections in Play Console against the current Google Mobile Ads SDK disclosure before release.
+Foreground package observations are transient during active workouts, with debug-only development diagnostics. Installed launcher apps are queried for the allowlist picker. No code sends the above fitness/profile/session data to an Earn it! backend or supplies it to AdMob requests.
 
-## Ads Declaration
+Deleting a routine preserves logs. No individual log-deletion UI exists. Clearing application storage or uninstalling removes local storage, subject to possible Android backup/restore. `allowBackup=true`; Android 12+ cloud exclusions exist, but legacy exclusions do not. Audit older Android backup and device transfer before promising exclusive on-device retention; see [Android backup documentation](https://developer.android.com/identity/data/autobackup).
 
-The app now contains ads through Google AdMob rewarded ads.
+Google Play distinguishes on-device processing from off-device collection, and requires third-party SDK practices to be included. Do not infer final checkboxes just from the absence of an Earn it! backend. See [Data Safety guidance](https://support.google.com/googleplay/android-developer/answer/10787469).
 
-Suggested Play Console answer:
+**VERIFY IN CURRENT GOOGLE PLAY / ADMOB DOCUMENTATION BEFORE SUBMISSION:** collection/sharing, purposes, optionality, data-type mapping, encryption/deletion answers, and applicable regional configuration for every SDK in the shipped artifact. Include profile and fitness/history processing in the assessment rather than omitting these features.
 
-- Contains ads: Yes.
-- Ad type: Rewarded ad shown only when the user chooses "Yes, support the creator" after finishing a workout.
-- Debug builds use Google's sample rewarded ad unit.
-- Release builds use the production rewarded ad unit `ca-app-pub-2584072112522734/3207856102`.
+## AdMob and consent release work
 
-## Exact Alarm Permission Decision
+The app contains ads: Google Mobile Ads SDK **24.7.0**. `RestLockApp.onCreate()` initializes AdMob and its completion callback preloads a rewarded ad. Loading is not gated by the support button. Display is requested only after **Yes, support the creator**; the session has already ended. Quick start leads to support directly; saved workouts first show a result with an optional support action. Ad failure permits continuation.
 
-`SCHEDULE_EXACT_ALARM` was removed from the manifest for Play Store readiness. Fitness Rest Lock does not need to ask for exact alarm access for the MVP because the in-process coroutine timer handles active sessions while the app process is alive, and `AlarmManager.setAndAllowWhileIdle` provides a fallback when exact alarms are unavailable.
+Debug uses Google's sample IDs; release uses the configured production IDs. Do not copy production IDs into documentation or review reports.
 
-If a future version requires exact wakeups while the app is killed, revisit the policy and add a stronger user-facing justification before restoring this permission.
+Google AdMob may process advertising-related data according to Google's SDK behavior and policies. The [current Mobile Ads disclosure](https://developers.google.com/admob/android/privacy/play-data-disclosure) describes IP addresses, product interactions, diagnostics, and device/account identifiers, but currently targets a newer SDK than 24.7.0. This is a verification checklist, not a verified exhaustive category list for this build. Confirm shipped SDK behavior and console configuration before selecting final answers.
 
-## Official Policy References
+No UMP/CMP consent flow is integrated in current app code. Regional consent configuration and any required implementation remain release work, including reviewing startup initialization/preloading. Consult [Google's EEA/UK/Switzerland CMP requirements](https://support.google.com/admob/answer/13554116) and [EU user consent guidance](https://www.google.com/about/company/user-consent-policy-help/). The optional support prompt does not replace advertising consent. Part 6 does not add a CMP or change the advertising flow.
 
-- Accessibility API policy: https://support.google.com/googleplay/android-developer/answer/10964491
-- Sensitive permissions policy: https://support.google.com/googleplay/android-developer/answer/16558241
-- Data safety form guidance: https://support.google.com/googleplay/android-developer/answer/10787469
-- Android exact alarm guidance: https://developer.android.com/about/versions/14/changes/schedule-exact-alarms
+## Permissions and timer implementation
+
+The app declares a system-bound Accessibility service. Its merged debug manifest also includes SDK/library permissions: `INTERNET`, `ACCESS_NETWORK_STATE`, `com.google.android.gms.permission.AD_ID`, `ACCESS_ADSERVICES_AD_ID`, `ACCESS_ADSERVICES_ATTRIBUTION`, `ACCESS_ADSERVICES_TOPICS`, `WAKE_LOCK`, `FOREGROUND_SERVICE`, and its signature-protected dynamic-receiver permission. A library permission does not mean Earn it! runs a workout foreground service: there is no workout notification/service implementation.
+
+No `QUERY_ALL_PACKAGES`, `SCHEDULE_EXACT_ALARM`, or `POST_NOTIFICATIONS` permission is requested by the current app. Package visibility uses launcher/home intent queries. Rest timing uses coroutine ticking and `AlarmManager.setAndAllowWhileIdle`; background delivery can be delayed. Do not promise exact delivery while the process is stopped.
+
+## Human input before submission
+
+- TODO: developer must provide contact email before publication.
+- TODO: host the privacy policy and provide its public URL; connect it to the listing and in-app access before publication.
+- Complete Play Console app access (no login), ads, target audience/content rating, health/fitness, Data Safety, and Accessibility declarations based on the actual distribution and SDK configuration.
+- Record the demonstration video, resolve regional consent/CMP requirements, and review backup behavior on supported Android versions.
+- Verify the highest previously uploaded version code and release artifact using README's existing signing workflow.
+
+These drafts do not submit forms or establish legal compliance.

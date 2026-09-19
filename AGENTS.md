@@ -5,8 +5,10 @@
 **Earn it!** est une app Android (Kotlin + Jetpack Compose) qui sert de minuteur de repos entre les séries de musculation.
 
 - Pendant le repos (`Resting`) : le téléphone s’utilise normalement, aucun blocage.
-- Quand le timer atteint **0:00** (`AwaitingDecision`) : les apps non autorisées sont bloquées via `AccessibilityService`. L’utilisateur choisit **Exercise done**, **+30s rest** ou **Finish workout**.
-- Données **100 % locales** (DataStore) ; pas de compte, pas de backend distant, pas d’historique de séances dans le MVP.
+- Quand le timer atteint **0:00** (`AwaitingDecision`) : les apps non autorisées sont bloquées via `AccessibilityService`. L’utilisateur choisit **Exercise done** (ou **Finish final set** pour la dernière série planifiée), **+30s rest** ou **Finish/Finish workout**.
+- Routines enregistrées, historique (30 résultats maximum, les 3 derniers affichés), profil âge/sexe/poids/taille et session dans DataStore ; pas de compte ni de backend Earn it! distant. Google AdMob est un SDK réseau initialisé avec préchargement au démarrage.
+- Création, séries/répétitions/ordre, édition et suppression de routines ; progression et résumé de fin. Supprimer une routine conserve son historique. Pas de suppression individuelle des logs. Quick start ne crée pas de log structuré.
+- La sauvegarde Android est autorisée par le manifeste : exclusions cloud Android 12+, mais pas de règles legacy. Ne pas promettre une rétention exclusivement sur l’appareil sur toutes les versions.
 
 | Identité | Valeur |
 |----------|--------|
@@ -49,6 +51,8 @@ L’UI ne dépend que des interfaces dans `com.restlock.domain` :
 - `SessionEngine` — machine d’états + commandes workout
 - `SettingsRepository` — durée de repos, packages autorisés
 - `InstalledAppsProvider` — apps launchables pour le picker
+- `FitnessRepository` — profil, routines, historique, métadonnées actives et résumé persistant
+- `PermissionGateway` (backend) — statut et accès aux paramètres Android
 
 Pour modifier la logique session : backend + adapters (`BackendSessionEngine`, etc.), pas les écrans directement.
 
@@ -69,10 +73,12 @@ L’utilisateur choisit les **apps autorisées** pendant le lock (libellé UX : 
 | AccessibilityService | `AppBlockerAccessibilityService.kt` — détecte le package au premier plan, `GLOBAL_ACTION_HOME`, puis ouvre `BlockerActivity` |
 | Écran de décision plein écran | `app/src/main/kotlin/com/restlock/BlockerActivity.kt` |
 | AlarmManager | `backend/alarm/` — réveil timer (pas de `SCHEDULE_EXACT_ALARM` dans le MVP) |
-| DataStore | préférences + état de session persistant |
-| AdMob (optionnel) | `app/src/main/kotlin/com/restlock/ads/CreatorSupportRewardedAd.kt` — pub récompensée après *Finish workout* ; si échec, finir la séance quand même |
+| DataStore | préférences/session et fitness (profil, routines, logs, résumé) ; pas de Room |
+| AdMob (optionnel) | `app/src/main/kotlin/com/restlock/ads/CreatorSupportRewardedAd.kt` — initialisation/préchargement au démarrage ; affichage optionnel après la fin effective de séance ; échec sans blocage |
 
-Onboarding Accessibility obligatoire avant les paramètres système : `PermissionOnboardingScreen.kt`.
+Pendant la séance active, Accessibility observe les changements de package au premier plan dès `Resting`, mais ne bloque qu’en `AwaitingDecision`. `canRetrieveWindowContent=false` ; diagnostics et logs de packages limités aux builds debug.
+
+Onboarding Accessibility obligatoire avant la première activation dans les paramètres système : `PermissionOnboardingScreen.kt`.
 
 ## Fichiers clés
 
@@ -100,6 +106,7 @@ Onboarding Accessibility obligatoire avant les paramètres système : `Permissio
 
 ```text
 .\gradlew.bat testDebugUnitTest
+.\gradlew.bat lintDebug
 .\gradlew.bat assembleDebug
 ```
 
@@ -124,5 +131,8 @@ Release : voir `README.md` (keystore dans `key/`, `keystore.properties` git-igno
 - Ne pas ajouter `QUERY_ALL_PACKAGES` (policy Play).
 - Ne pas retirer la **disclosure Accessibility** avant l’ouverture des paramètres système.
 - Ne pas committer `key/keystore.properties` ni exposer les IDs AdMob de prod.
-- MVP : **pas d’historique** de workouts (Room = post-MVP).
-- Accessibility : utilisé uniquement pour le **nom de package** au premier plan pendant le lock, pas pour lire le contenu d’écran.
+- Préserver l’historique DataStore et les protections d’édition/suppression de routine active. La dernière série termine sans repos supplémentaire.
+- Pas de SDK de consentement/CMP intégré actuellement : besoin régional à résoudre avant publication (voir déclarations Play).
+- Texte UI dans `res/values/strings.xml`, anglais par défaut ; pas de traduction complète ni de migration géante du catalogue.
+- SDK 36 et workflow release de Part 5 déjà intégrés : conserver signing/versioning, pas de CI en Part 6.
+- Accessibility : utilisé uniquement pour le **nom de package** au premier plan pendant la séance active, pas pour lire le contenu d’écran, les messages, mots de passe, formulaires, notifications, navigateur ou arbres de nœuds.

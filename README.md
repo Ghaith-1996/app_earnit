@@ -1,15 +1,14 @@
-# earn it !
+# Earn it!
 
-Native Android app for the Rest-Lock fitness MVP. Kotlin + Jetpack Compose,
-dark-first, single-module.
+Native Android workout planner and rest timer, built with Kotlin + Jetpack Compose.
+Public name: **Earn it!**; `applicationId`: `com.fitness.restlock`.
 
-> User-facing name: **earn it !** — internal `applicationId` is still
-> `com.fitness.restlock` so the existing signing identity is preserved.
-
-The UI is built against a small **StateFlow contract** that the backend agent
-implements (DataStore, Room, AlarmManager, AccessibilityService). For local
-development the contract is wired to in-memory fakes so the full UI is
-runnable today.
+Create/edit/reorder saved routines, configure sets and reps, then start a workout.
+Use the phone normally during rest. At 0:00, non-allowed apps redirect to a decision
+screen: **Exercise done**, **+30s rest**, or **Finish**. The final planned set says
+**Finish final set** and completes without another countdown. Sessions can end early.
+Saved workouts produce a summary and local history; Home shows the latest three
+results. Quick start has no structured log. Deleting a routine preserves logs.
 
 ## Run
 
@@ -39,106 +38,66 @@ path; on another machine, override `org.gradle.java.home` with your JDK location
 If Windows `clean` reports locked lint-cache JARs, run `.\gradlew.bat --stop`
 and retry the build with `--no-daemon` to release the cached file handles.
 
-## Project layout
 
-```
-app/src/main/kotlin/com/restlock/
-├── RestLockApp.kt          # Application container, wires the contract to fakes
-├── MainActivity.kt         # Hosts the Compose nav graph
-├── BlockerActivity.kt      # Full-screen lock prompt (launched by the AccessibilityService)
-├── domain/                 # The contract the backend MUST implement
-│   ├── SessionState.kt
-│   ├── SessionEngine.kt
-│   ├── SettingsRepository.kt
-│   ├── InstalledAppsProvider.kt
-│   └── fake/               # In-memory implementations for dev
-└── ui/
-    ├── theme/              # Palette, typography, theme wrapper
-    ├── components/         # TimerRing, GlassCard, PrimaryAction, StateChip
-    ├── screens/            # HomeScreen, SetupSheet, AppPickerScreen, BlockerScreen
-    ├── nav/                # Navigation graph
-    ├── HomeViewModel.kt
-    ├── AppPickerViewModel.kt
-    ├── BlockerViewModel.kt
-    └── RestLockViewModelFactory.kt
-```
+## Architecture
 
-## The contract (what the backend agent implements)
+`RestLockApp` wires real backend adapters, not development fakes. UI and contracts
+live in `app/src/main/kotlin/com/restlock/`; native backend code lives in
+`app/src/main/java/com/fitness/restlock/backend/`.
 
-The UI depends on **three interfaces only**. Swap the fakes in
-`RestLockApp.onCreate()` for real implementations and the UI is unchanged.
+- `SessionEngine` / `BackendSessionEngine`: serialized workout commands, set progression,
+  final-set completion, and recovery of pending results through `WorkoutController`.
+- `SettingsRepository`: DataStore-backed rest duration and **allowed** package names.
+- `FitnessRepository` / `BackendFitnessRepository`: profile age/sex/weight/height,
+  saved routines with ordered exercise IDs/sets/reps, active metadata, logs, and summary.
+- `InstalledAppsProvider`: launchable apps queried through PackageManager for the allowlist.
+- `PermissionGateway`: native permission status/settings access.
 
-### `SessionEngine`
+Two DataStore preference stores hold session/settings and fitness data; no Room database.
+Capacity is 30 routines and 30 logs. Logs include timestamps/duration and set counts
+when known, exercises reached, and estimated calories. There is no individual log-deletion UI.
+Fakes are used by tests. No account or remote Earn it! backend exists.
 
-The state machine the UI observes and commands.
+## Android behavior
 
-```
-Idle
-  └─ startWorkout(rest)        ──▶ Resting (remaining = rest)
+| Phase | Blocking |
+| --- | --- |
+| Idle | None |
+| Resting | None |
+| AwaitingDecision | Enforce allowlist after expiry |
 
-Resting
-  ├─ timer reaches 0           ──▶ AwaitingDecision (blockerArmed = true)
-  └─ finishWorkout()           ──▶ Idle
+Accessibility observes foreground package changes throughout an active workout,
+including `Resting`, so it knows which app is already open at expiry. It reads no
+screen text/content or node trees (`canRetrieveWindowContent=false`). It sends
+blocked apps through Home to `BlockerActivity` only in `AwaitingDecision`.
+Self, launchers, settings, dialer/emergency and other essential packages are exempt;
+an empty allowlist is strict mode. Both package logging and Home's diagnostic card
+are guarded by `FLAG_DEBUGGABLE`. First enabling Accessibility requires in-app disclosure/consent.
 
-AwaitingDecision
-  ├─ exerciseDone()            ──▶ Resting (remaining = chosenRest, setsCompleted +1)
-  ├─ addThirtySeconds()        ──▶ Resting (remaining = 30s, extraRests +1, blockerArmed = false)
-  └─ finishWorkout()           ──▶ Idle
-```
+The timer uses coroutine ticking and `AlarmManager.setAndAllowWhileIdle`; no exact-alarm
+permission or workout countdown foreground service/notification. Background alarms
+are inexact. No `QUERY_ALL_PACKAGES` permission; launcher/home queries restrict visibility.
 
-Implementations must:
+AdMob initializes and preloads at startup; display is optional after the workout
+has ended. Saved-workout summaries have an optional support action. The app has no
+integrated UMP/CMP flow. Workout/profile/settings/session data are not uploaded to an
+Earn it! backend, but AdMob is a network SDK. Android backup is enabled, with Android
+12+ cloud exclusions but no legacy exclusions; avoid unconditional offline/retention claims.
+See [privacy policy](PRIVACY_POLICY.md) and [Play declarations](GOOGLE_PLAY_DECLARATIONS.md)
+for the consent, backup, contact, and hosted-policy release checklist.
 
-- Emit `state` updates on every UI-relevant change, including each visible
-  countdown tick (the fake ticks every 250 ms).
-- Survive process death — after restart, the first collector sees the correct
-  phase (back this with DataStore on the real implementation).
-- Use `AlarmManager` for the actual rest-end timing on the real impl, and
-  gracefully fall back if `SCHEDULE_EXACT_ALARM` is denied.
+## UI copy and tests
 
-See `FakeSessionEngineTest` for the executable spec.
+Default application copy is in `app/src/main/res/values/strings.xml`, with formatting
+and plurals for counts. The language is English; no second-language translation is
+added. Exercise catalog names/sections/equipment and user-entered or stored routine
+names remain content, separate from this localization foundation.
 
-### `SettingsRepository`
-
-Persisted user preferences. Real impl is DataStore-backed.
-
-- `chosenRest: Flow<Duration>` — current rest length
-- `blockedPackages: Flow<Set<String>>` — package names the user picked
-- `setChosenRest(Duration)` / `setBlockedPackages(Set<String>)`
-
-### `InstalledAppsProvider`
-
-Lists the launchable apps the user is allowed to block. Real impl queries
-`PackageManager` for `ACTION_MAIN` + `CATEGORY_LAUNCHER` activities (no
-`QUERY_ALL_PACKAGES`) and filters out the host app, the active launcher,
-settings, dialer, emergency, and core system packages.
-
-## Android integration the backend owns
-
-The frontend assumes the backend wires:
-
-- **AccessibilityService** detecting foreground app changes; when a blocked
-  package is foregrounded during `AwaitingDecision`, it launches
-  `BlockerActivity` (passing the human-readable label in
-  `BlockerActivity.EXTRA_BLOCKED_APP_LABEL`).
-- **AlarmManager** for the actual rest-end alarm.
-- **Foreground service + notification** showing the live countdown.
-- **Room** for workout history (post-MVP — current spec is "no history").
-
-## UI states implemented
-
-- **Idle** — large ring with "ready when you are", Start CTA + presets sheet.
-- **Resting** — animated progress ring counting down, stats below, finish
-  workout secondary action.
-- **AwaitingDecision** — ring shows `0:00`, mint "Exercise done" primary CTA,
-  `+30s rest` and `Finish` secondary actions.
-- **Blocker overlay** — same three actions as a full-screen activity for when
-  the user opens a blocked app.
-
-## Testing
-
-- `FakeSessionEngineTest` pins the state-machine contract.
-- Add instrumentation tests under `app/src/androidTest/...` once the backend
-  is wired (the spec test plan calls for Compose flow tests).
+Run `testDebugUnitTest`, `lintDebug`, and `assembleDebug`. Tests cover the fake contract,
+session reducer/controller/adapters, persistence/recovery/mutations, ViewModel routines,
+and blocker coordination/lifecycle. Device smoke tests cover onboarding, picker,
+countdown/expiry, final completion, history, deletion, and optional support.
+See [BACKEND_HANDOFF.md](BACKEND_HANDOFF.md) for technical detail.
 
 ## Release build
 
@@ -217,9 +176,3 @@ upload. Do not substitute a debug-signed artifact.
 
 Compatibility references: [Android SDK / AGP / Gradle requirements](https://developer.android.com/build/releases/about-agp)
 and [Android 16 behavior changes](https://developer.android.com/about/versions/16/behavior-changes-16).
-
-## Notes
-
-- This blocks only the selected apps; whole-device kiosk is out of scope.
-- Package visibility is restricted to launchable apps (no
-  `QUERY_ALL_PACKAGES`) per Play policy.
