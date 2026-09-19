@@ -1,5 +1,9 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,9 +43,9 @@ fun WorkoutSummaryDialog(
             ) {
                 Text(
                     text = when (log.completedFully) {
-                        true -> "Workout complete"
-                        false -> "Workout ended early"
-                        null -> "Workout finished"
+                        true -> stringResource(R.string.summary_complete)
+                        false -> stringResource(R.string.summary_ended_early)
+                        null -> stringResource(R.string.summary_finished)
                     },
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     color = RestLockPalette.TextHigh,
@@ -52,42 +56,45 @@ fun WorkoutSummaryDialog(
                     color = RestLockPalette.TextHigh,
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Duration: ${log.durationLabel()}", color = RestLockPalette.TextMid)
+                    Text(stringResource(R.string.summary_duration, log.durationLabel()), color = RestLockPalette.TextMid)
                     Text(log.setsLabel(), color = RestLockPalette.TextMid)
-                    Text("${log.exerciseCount} exercises reached", color = RestLockPalette.TextMid)
+                    Text(pluralStringResource(R.plurals.summary_exercises_reached, log.exerciseCount, log.exerciseCount), color = RestLockPalette.TextMid)
                     Text(
-                        text = "~${log.calories} kcal",
+                        text = stringResource(R.string.calories_estimate, log.calories),
                         style = MaterialTheme.typography.titleLarge,
                         color = RestLockPalette.Mint,
                     )
                     Text(
-                        text = "Saved to your recent workouts. Calories are approximate.",
+                        text = stringResource(R.string.summary_saved_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = RestLockPalette.TextLow,
                     )
                 }
                 PrimaryAction(
-                    label = "Done",
+                    label = stringResource(R.string.action_done),
                     onClick = onDismiss,
                     brush = MintBrush,
                     contentColor = RestLockPalette.Ink0,
                 )
-                SecondaryAction(label = "Support the creator (optional)", onClick = onSupportCreator)
+                SecondaryAction(label = stringResource(R.string.action_support_optional), onClick = onSupportCreator)
             }
         }
     }
 }
 
-internal fun WorkoutLog.durationLabel(): String = durationMinutes?.let { "$it min" } ?: "Duration unavailable"
+@Composable
+internal fun WorkoutLog.durationLabel(): String = durationMinutes?.let { stringResource(R.string.duration_minutes, it) } ?: stringResource(R.string.duration_unavailable)
 
+@Composable
 internal fun WorkoutLog.setsLabel(): String = if (completedSets != null && plannedSets != null) {
-    "$completedSets/$plannedSets sets completed"
+    pluralStringResource(R.plurals.sets_completed, plannedSets, completedSets, plannedSets)
 } else {
-    "Set counts unavailable"
+    stringResource(R.string.sets_unavailable)
 }
 
+@Composable
 internal fun WorkoutLog.completionLabel(): String = when (completedFully) {
-    true -> "Completed"
-    false -> "Ended early"
-    null -> "Completion unknown"
+    true -> stringResource(R.string.completion_completed)
+    false -> stringResource(R.string.completion_ended_early)
+    null -> stringResource(R.string.completion_unknown)
 }

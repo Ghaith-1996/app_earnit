@@ -1,5 +1,9 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -92,13 +96,13 @@ private fun BlockerHeader(blockedAppLabel: String?) {
     ) {
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "EARN IT!",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.labelMedium,
             color = RestLockPalette.TextLow,
         )
         if (blockedAppLabel != null) {
             Text(
-                text = "$blockedAppLabel is locked",
+                text = stringResource(R.string.blocker_app_locked, blockedAppLabel),
                 style = MaterialTheme.typography.titleMedium,
                 color = RestLockPalette.TextMid,
                 textAlign = TextAlign.Center,
@@ -136,20 +140,26 @@ private fun BlockerHero(preview: ActiveExercisePreview?) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "Workout time",
+                text = stringResource(R.string.blocker_title),
                 style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.ExtraBold),
                 color = RestLockPalette.TextHigh,
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = "Finish your set, then pick what comes next.",
+                text = stringResource(R.string.blocker_next_action),
                 style = MaterialTheme.typography.bodyLarge,
                 color = RestLockPalette.TextMid,
                 textAlign = TextAlign.Center,
             )
             if (preview != null) {
                 Text(
-                    text = "${preview.definition.name}\nSet ${preview.setNumberForExercise}/${preview.totalSetsForExercise} · ${preview.plannedExercise.reps} reps",
+                    text = stringResource(
+                        R.string.blocker_exercise_progress,
+                        preview.definition.name,
+                        preview.setNumberForExercise,
+                        preview.totalSetsForExercise,
+                        pluralStringResource(R.plurals.rep_count, preview.plannedExercise.reps, preview.plannedExercise.reps),
+                    ),
                     style = MaterialTheme.typography.bodyLarge,
                     color = RestLockPalette.Mint,
                     textAlign = TextAlign.Center,
@@ -174,14 +184,14 @@ private fun BlockerActions(
     ) {
         GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 14) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MiniStat(label = "Sets", value = setsCompleted.toString(), tint = RestLockPalette.Mint)
+                MiniStat(label = stringResource(R.string.label_sets), value = setsCompleted.toString(), tint = RestLockPalette.Mint)
                 Spacer(Modifier.size(24.dp))
-                MiniStat(label = "+30s", value = extraRests.toString(), tint = RestLockPalette.Amber)
+                MiniStat(label = stringResource(R.string.label_extra_rest), value = extraRests.toString(), tint = RestLockPalette.Amber)
             }
         }
 
         PrimaryAction(
-            label = if (isFinalSet) "Finish final set" else "Exercise done",
+            label = if (isFinalSet) stringResource(R.string.action_finish_final_set) else stringResource(R.string.action_exercise_done),
             onClick = onExerciseDone,
             leadingIcon = Icons.Rounded.CheckCircle,
             brush = MintBrush,
@@ -189,13 +199,13 @@ private fun BlockerActions(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SecondaryAction(
-                label = "+30s rest",
+                label = stringResource(R.string.action_add_30_seconds),
                 onClick = onAddThirtySeconds,
                 leadingIcon = Icons.Rounded.AddAlarm,
                 modifier = Modifier.weight(1f),
             )
             SecondaryAction(
-                label = "Finish",
+                label = stringResource(R.string.action_finish),
                 onClick = onFinishWorkout,
                 leadingIcon = Icons.Rounded.Stop,
                 modifier = Modifier.weight(1f),

@@ -1,5 +1,9 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -72,6 +76,7 @@ fun SetupSheet(
     }
     var customError by remember(initialRest) { mutableStateOf<String?>(null) }
     val selectedIsPreset = SettingsRepository.RestPresets.contains(selected)
+    val invalidDurationMessage = stringResource(R.string.setup_invalid_duration)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -97,12 +102,12 @@ fun SetupSheet(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "Set up your session",
+                    text = stringResource(R.string.setup_title),
                     style = MaterialTheme.typography.headlineMedium,
                     color = RestLockPalette.TextHigh,
                 )
                 Text(
-                    text = "Choose your rest length. Apps lock when the timer ends.",
+                    text = stringResource(R.string.setup_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextMid,
                 )
@@ -110,7 +115,7 @@ fun SetupSheet(
 
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "REST DURATION",
+                    text = stringResource(R.string.setup_rest_duration),
                     style = MaterialTheme.typography.labelMedium,
                     color = RestLockPalette.TextLow,
                 )
@@ -124,7 +129,7 @@ fun SetupSheet(
                     }
                     item {
                         DurationChip(
-                            label = "Custom",
+                            label = stringResource(R.string.action_custom),
                             selected = !selectedIsPreset,
                             onClick = {
                                 customOpen = !customOpen
@@ -160,7 +165,7 @@ fun SetupSheet(
                                 secondsText = customSeconds,
                             )
                             if (customSecondsTotal == null) {
-                                customError = "Use a time from 5 sec to 60 min."
+                                customError = invalidDurationMessage
                             } else {
                                 selected = customSecondsTotal.seconds
                                 customError = null
@@ -178,7 +183,7 @@ fun SetupSheet(
             Spacer(Modifier.height(4.dp))
 
             PrimaryAction(
-                label = "Start workout",
+                label = stringResource(R.string.action_start_workout),
                 onClick = { onStart(selected) },
                 leadingIcon = Icons.Rounded.PlayArrow,
                 brush = PrimaryBrush,
@@ -204,14 +209,14 @@ private fun CustomDurationEditor(
         ) {
             DurationNumberField(
                 value = minutesText,
-                label = "Min",
+                label = stringResource(R.string.label_minutes),
                 isError = errorText != null,
                 onValueChange = onMinutesChange,
                 modifier = Modifier.weight(1f),
             )
             DurationNumberField(
                 value = secondsText,
-                label = "Sec",
+                label = stringResource(R.string.label_seconds),
                 isError = errorText != null,
                 onValueChange = onSecondsChange,
                 modifier = Modifier.weight(1f),
@@ -225,7 +230,7 @@ private fun CustomDurationEditor(
             )
         }
         SecondaryAction(
-            label = "Use custom time",
+            label = stringResource(R.string.action_use_custom_time),
             onClick = onApply,
         )
     }
@@ -317,19 +322,19 @@ private fun AllowedAppsRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "ALLOWED APPS",
+                text = stringResource(R.string.setup_allowed_apps),
                 style = MaterialTheme.typography.labelMedium,
                 color = RestLockPalette.TextLow,
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = if (allowedCount == 0) "Strict mode" else "$allowedCount allowed",
+                text = if (allowedCount == 0) stringResource(R.string.label_strict_mode) else pluralStringResource(R.plurals.apps_allowed_count, allowedCount, allowedCount),
                 style = MaterialTheme.typography.titleMedium,
                 color = RestLockPalette.TextHigh,
             )
         }
         SecondaryAction(
-            label = if (allowedCount == 0) "Allow apps" else "Edit",
+            label = if (allowedCount == 0) stringResource(R.string.action_allow_apps) else stringResource(R.string.action_edit),
             onClick = onOpenAppPicker,
             leadingIcon = Icons.Rounded.Apps,
             modifier = Modifier.width(160.dp),

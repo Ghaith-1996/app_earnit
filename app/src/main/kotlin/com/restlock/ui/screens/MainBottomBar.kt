@@ -1,5 +1,8 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Home
@@ -35,21 +38,21 @@ fun MainBottomBar(
             selected = selectedTab == MainTab.Home,
             onClick = onHome,
             icon = { Icon(Icons.Rounded.Home, contentDescription = null) },
-            label = { Text("Home") },
+            label = { Text(stringResource(R.string.nav_home)) },
             colors = navColors(),
         )
         NavigationBarItem(
             selected = selectedTab == MainTab.Workouts,
             onClick = onWorkouts,
             icon = { Icon(Icons.Rounded.FitnessCenter, contentDescription = null) },
-            label = { Text("Workouts") },
+            label = { Text(stringResource(R.string.nav_workouts)) },
             colors = navColors(),
         )
         NavigationBarItem(
             selected = selectedTab == MainTab.Settings,
             onClick = onSettings,
             icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
-            label = { Text("Settings") },
+            label = { Text(stringResource(R.string.nav_settings)) },
             colors = navColors(),
         )
     }

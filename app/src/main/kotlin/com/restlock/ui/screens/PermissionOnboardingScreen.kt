@@ -1,5 +1,8 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -60,12 +63,12 @@ fun PermissionOnboardingScreen(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                text = "Enable app locking",
+                text = stringResource(R.string.permission_title),
                 style = MaterialTheme.typography.headlineMedium,
                 color = RestLockPalette.TextHigh,
             )
             Text(
-                text = "Rest Lock uses Accessibility to block apps only after your rest timer reaches 0:00.",
+                text = stringResource(R.string.permission_intro),
                 style = MaterialTheme.typography.bodyMedium,
                 color = RestLockPalette.TextMid,
             )
@@ -75,24 +78,28 @@ fun PermissionOnboardingScreen(
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 PermissionStatusRow(enabled = accessibilityEnabled)
                 DisclosurePoint(
-                    title = "When blocking runs",
-                    body = "Only during the decision lock after a rest timer expires.",
+                    title = stringResource(R.string.permission_timing_title),
+                    body = stringResource(R.string.permission_timing_body),
                 )
                 DisclosurePoint(
-                    title = "What it checks",
-                    body = "During a workout, it remembers the latest foreground app package name so blocking can start at 0:00, even if that app is already open. Apps remain usable throughout the rest countdown.",
+                    title = stringResource(R.string.permission_observation_title),
+                    body = stringResource(R.string.permission_observation_body),
                 )
                 DisclosurePoint(
-                    title = "What it does",
-                    body = "If the app is not allowed, Rest Lock sends you back to Home and opens the workout decision screen.",
+                    title = stringResource(R.string.permission_action_title),
+                    body = stringResource(R.string.permission_action_body),
                 )
                 DisclosurePoint(
-                    title = "What it does not do",
-                    body = "It never reads messages, passwords, form text, notifications, or screen content.",
+                    title = stringResource(R.string.permission_exclusions_title),
+                    body = stringResource(R.string.permission_exclusions_body),
                 )
                 DisclosurePoint(
-                    title = "Where data stays",
-                    body = "Your rest time, allowed apps, and current session are stored locally on this device.",
+                    title = stringResource(R.string.permission_storage_title),
+                    body = stringResource(R.string.permission_storage_body),
+                )
+                DisclosurePoint(
+                    title = stringResource(R.string.permission_ads_title),
+                    body = stringResource(R.string.permission_ads_body),
                 )
             }
         }
@@ -112,7 +119,7 @@ fun PermissionOnboardingScreen(
                     ),
                 )
                 Text(
-                    text = "I understand and want to enable Accessibility for app locking.",
+                    text = stringResource(R.string.permission_consent),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextHigh,
                     modifier = Modifier.weight(1f),
@@ -121,7 +128,7 @@ fun PermissionOnboardingScreen(
         }
 
         PrimaryAction(
-            label = if (accessibilityEnabled) "Accessibility enabled" else "Open Accessibility settings",
+            label = if (accessibilityEnabled) stringResource(R.string.permission_enabled_action) else stringResource(R.string.action_open_accessibility_settings),
             onClick = {
                 viewModel.refreshPermissions()
                 context.startActivity(viewModel.accessibilitySettingsIntent().newTask())
@@ -132,7 +139,7 @@ fun PermissionOnboardingScreen(
         )
 
         SecondaryAction(
-            label = "Continue to app",
+            label = stringResource(R.string.action_continue_app),
             onClick = {
                 viewModel.refreshPermissions()
                 onContinue()
@@ -140,7 +147,7 @@ fun PermissionOnboardingScreen(
         )
 
         Text(
-            text = "Exact alarm permission is not requested. If Android does not allow precise alarms, Rest Lock uses the system fallback timer.",
+            text = stringResource(R.string.permission_alarm_note),
             style = MaterialTheme.typography.bodyMedium,
             color = RestLockPalette.TextLow,
         )
@@ -163,13 +170,13 @@ private fun PermissionStatusRow(enabled: Boolean) {
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = if (enabled) "Accessibility is enabled" else "Accessibility is off",
+                text = if (enabled) stringResource(R.string.permission_enabled) else stringResource(R.string.permission_disabled),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = RestLockPalette.TextHigh,
             )
             Text(
-                text = if (enabled) "Blocking can run when the rest timer ends."
-                else "Blocking will not work until this service is enabled in Android settings.",
+                text = if (enabled) stringResource(R.string.permission_ready)
+                else stringResource(R.string.permission_needs_enable),
                 style = MaterialTheme.typography.bodyMedium,
                 color = RestLockPalette.TextLow,
             )

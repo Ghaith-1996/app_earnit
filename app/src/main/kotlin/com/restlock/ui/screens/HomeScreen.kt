@@ -1,5 +1,9 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -259,12 +263,12 @@ private fun TopBar(state: HomeUiState) {
     ) {
         Column {
             Text(
-                text = "Earn it!",
+                text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = RestLockPalette.TextHigh,
             )
             Text(
-                text = "Earn your scroll.",
+                text = stringResource(R.string.home_tagline),
                 style = MaterialTheme.typography.bodyMedium,
                 color = RestLockPalette.TextLow,
             )
@@ -282,18 +286,18 @@ private fun PermissionBanner(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "App locking needs setup",
+                    text = stringResource(R.string.home_permission_title),
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = RestLockPalette.TextHigh,
                 )
                 Text(
-                    text = "Review the Accessibility disclosure before enabling app locking.",
+                    text = stringResource(R.string.home_permission_body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextLow,
                 )
             }
             SecondaryAction(
-                label = if (permissions.isAccessibilityServiceEnabled) "Review permissions" else "Set up permissions",
+                label = if (permissions.isAccessibilityServiceEnabled) stringResource(R.string.action_review_permissions) else stringResource(R.string.action_setup_permissions),
                 onClick = onOpenPermissions,
                 leadingIcon = Icons.Rounded.Tune,
             )
@@ -314,25 +318,25 @@ private fun QuickStartCard(
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "Quick start",
+                    text = stringResource(R.string.action_quick_start),
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = RestLockPalette.TextHigh,
                 )
                 Text(
-                    text = "Start a ${state.chosenRest.toCompactLabel()} rest lock with ${state.allowedAppCount} allowed app${if (state.allowedAppCount == 1) "" else "s"}.",
+                    text = pluralStringResource(R.plurals.home_quick_start_description, state.allowedAppCount, state.chosenRest.toCompactLabel(), state.allowedAppCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextLow,
                 )
             }
             PrimaryAction(
-                label = "Quick start",
+                label = stringResource(R.string.action_quick_start),
                 onClick = onQuickStart,
                 leadingIcon = Icons.Rounded.PlayArrow,
                 brush = PrimaryBrush,
             )
             if (state.savedWorkouts.isNotEmpty()) {
                 SecondaryAction(
-                    label = "Start saved workout",
+                    label = stringResource(R.string.action_start_saved_workout),
                     onClick = onStartSavedWorkout,
                     leadingIcon = Icons.Rounded.PlayArrow,
                 )
@@ -345,14 +349,14 @@ private fun QuickStartCard(
                     modifier = Modifier.weight(1f),
                 )
                 SecondaryAction(
-                    label = "Allowed apps",
+                    label = stringResource(R.string.action_allowed_apps),
                     onClick = onOpenAppPicker,
                     leadingIcon = Icons.Rounded.Tune,
                     modifier = Modifier.weight(1f),
                 )
             }
             SecondaryAction(
-                label = "Build workout",
+                label = stringResource(R.string.action_build_workout),
                 onClick = onOpenWorkout,
                 leadingIcon = Icons.Rounded.FitnessCenter,
             )
@@ -366,7 +370,7 @@ private fun HeroTimer(state: HomeUiState) {
     val (timeText, caption, progress) = when (session.phase) {
         SessionState.Phase.Idle -> Triple(
             state.chosenRest.toClockString(),
-            "ready when you are",
+            stringResource(R.string.home_ready_caption),
             null,
         )
         SessionState.Phase.Resting -> {
@@ -375,13 +379,13 @@ private fun HeroTimer(state: HomeUiState) {
             val prog = (remaining.inWholeMilliseconds.toFloat() / totalMs)
             Triple(
                 remaining.toClockString(),
-                state.activeExercisePreview?.definition?.name ?: state.activeWorkout?.name ?: "rest until next set",
+                state.activeExercisePreview?.definition?.name ?: state.activeWorkout?.name ?: stringResource(R.string.home_rest_caption),
                 prog,
             )
         }
         SessionState.Phase.AwaitingDecision -> Triple(
             "0:00",
-            state.activeExercisePreview?.definition?.name ?: state.activeWorkout?.name ?: "pick your next move",
+            state.activeExercisePreview?.definition?.name ?: state.activeWorkout?.name ?: stringResource(R.string.home_decision_caption),
             0f,
         )
     }
@@ -420,12 +424,12 @@ private fun ActiveExercisePreviewCard(
         if (preview == null) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "Workout complete",
+                    text = stringResource(R.string.summary_complete),
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = RestLockPalette.TextHigh,
                 )
                 Text(
-                    text = "All ${workout.totalSets} sets are marked done. Finish the workout when you are ready.",
+                    text = pluralStringResource(R.plurals.home_all_sets_done, workout.totalSets, workout.totalSets),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextLow,
                 )
@@ -453,7 +457,7 @@ private fun ActiveExercisePreviewCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = "Current exercise",
+                    text = stringResource(R.string.home_current_exercise),
                     style = MaterialTheme.typography.labelMedium,
                     color = RestLockPalette.TextLow,
                 )
@@ -465,12 +469,19 @@ private fun ActiveExercisePreviewCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "Rank ${preview.exerciseRank}/${preview.exerciseCount} - Set ${preview.setNumberForExercise}/${preview.totalSetsForExercise} - ${preview.plannedExercise.reps} reps",
+                    text = stringResource(
+                        R.string.home_exercise_progress,
+                        preview.exerciseRank,
+                        preview.exerciseCount,
+                        preview.setNumberForExercise,
+                        preview.totalSetsForExercise,
+                        pluralStringResource(R.plurals.rep_count, preview.plannedExercise.reps, preview.plannedExercise.reps),
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextMid,
                 )
                 Text(
-                    text = "${preview.completedSetsInWorkout}/${preview.totalSetsInWorkout} sets completed",
+                    text = pluralStringResource(R.plurals.sets_completed, preview.totalSetsInWorkout, preview.completedSetsInWorkout, preview.totalSetsInWorkout),
                     style = MaterialTheme.typography.bodySmall,
                     color = RestLockPalette.TextLow,
                 )
@@ -485,12 +496,12 @@ private fun RecentWorkoutsCard(logs: List<WorkoutLog>) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "Last workouts",
+                    text = stringResource(R.string.home_history_title),
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = RestLockPalette.TextHigh,
                 )
                 Text(
-                    text = "Latest 3 sessions with approximate calories burned.",
+                    text = stringResource(R.string.home_history_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextLow,
                 )
@@ -498,7 +509,7 @@ private fun RecentWorkoutsCard(logs: List<WorkoutLog>) {
 
             if (logs.isEmpty()) {
                 Text(
-                    text = "No workouts logged yet.",
+                    text = stringResource(R.string.home_history_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextMid,
                 )
@@ -525,18 +536,18 @@ private fun RecentWorkoutRow(log: WorkoutLog) {
                 color = RestLockPalette.TextHigh,
             )
             Text(
-                text = "${formatWorkoutDate(log.completedAtMillis)} · ${log.durationLabel()}",
+                text = stringResource(R.string.history_date_duration, formatWorkoutDate(log.completedAtMillis), log.durationLabel()),
                 style = MaterialTheme.typography.bodySmall,
                 color = RestLockPalette.TextLow,
             )
             Text(
-                text = "${log.setsLabel()} · ${log.completionLabel()}",
+                text = stringResource(R.string.history_sets_status, log.setsLabel(), log.completionLabel()),
                 style = MaterialTheme.typography.bodySmall,
                 color = RestLockPalette.TextLow,
             )
         }
         Text(
-            text = "~${log.calories} kcal",
+            text = stringResource(R.string.calories_estimate, log.calories),
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
             color = RestLockPalette.Mint,
         )
@@ -589,12 +600,12 @@ private fun WorkoutChoiceSheet(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Choose workout",
+                        text = stringResource(R.string.home_choose_workout),
                         style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                         color = RestLockPalette.TextHigh,
                     )
                     Text(
-                        text = "Timer starts with your $restLabel rest interval.",
+                        text = stringResource(R.string.home_workout_rest_interval, restLabel),
                         style = MaterialTheme.typography.bodyMedium,
                         color = RestLockPalette.TextMid,
                     )
@@ -602,7 +613,7 @@ private fun WorkoutChoiceSheet(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
-                        contentDescription = "Close",
+                        contentDescription = stringResource(R.string.action_close),
                         tint = RestLockPalette.TextMid,
                     )
                 }
@@ -672,7 +683,13 @@ private fun WorkoutChoiceRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${workout.exercises.size} exercises - ${workout.totalSets} sets - $minutes min - ~$calories kcal",
+                text = stringResource(
+                    R.string.workout_metrics,
+                    pluralStringResource(R.plurals.exercise_count, workout.exercises.size, workout.exercises.size),
+                    pluralStringResource(R.plurals.set_count, workout.totalSets, workout.totalSets),
+                    minutes,
+                    calories,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = RestLockPalette.TextLow,
             )
@@ -692,13 +709,13 @@ private fun SessionStats(setsCompleted: Int, extraRests: Int) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         StatTile(
-            label = "Sets",
+            label = stringResource(R.string.label_sets),
             value = setsCompleted.toString(),
             tint = RestLockPalette.Mint,
             modifier = Modifier.weight(1f),
         )
         StatTile(
-            label = "+30s used",
+            label = stringResource(R.string.label_extra_rests_used),
             value = extraRests.toString(),
             tint = RestLockPalette.Amber,
             modifier = Modifier.weight(1f),
@@ -741,13 +758,13 @@ private fun IdleHints(allowedAppCount: Int) {
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (allowedAppCount == 0) "Strict mode is ready"
-                    else "$allowedAppCount app${if (allowedAppCount == 1) "" else "s"} allowed",
+                    text = if (allowedAppCount == 0) stringResource(R.string.home_strict_ready)
+                    else pluralStringResource(R.plurals.apps_allowed, allowedAppCount, allowedAppCount),
                     style = MaterialTheme.typography.titleMedium,
                     color = RestLockPalette.TextHigh,
                 )
                 Text(
-                    text = "Everything else locks once your rest timer expires.",
+                    text = stringResource(R.string.home_lock_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextLow,
                 )
@@ -810,14 +827,14 @@ private fun ActionDock(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 PrimaryAction(
-                    label = "Start workout",
+                    label = stringResource(R.string.action_start_workout),
                     onClick = onStart,
                     leadingIcon = Icons.Rounded.PlayArrow,
                     brush = PrimaryBrush,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SecondaryAction(
-                        label = "Allowed apps",
+                        label = stringResource(R.string.action_allowed_apps),
                         onClick = onOpenAppPicker,
                         leadingIcon = Icons.Rounded.Tune,
                         modifier = Modifier.weight(1f),
@@ -836,12 +853,12 @@ private fun ActionDock(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    text = "Resting - non-allowed apps will lock when the timer ends.",
+                    text = stringResource(R.string.home_resting_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextLow,
                 )
                 SecondaryAction(
-                    label = "Finish workout",
+                    label = stringResource(R.string.action_finish_workout),
                     onClick = onFinish,
                     leadingIcon = Icons.Rounded.Stop,
                 )
@@ -852,7 +869,7 @@ private fun ActionDock(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 PrimaryAction(
-                    label = if (state.session.isFinalSet) "Finish final set" else "Exercise done",
+                    label = if (state.session.isFinalSet) stringResource(R.string.action_finish_final_set) else stringResource(R.string.action_exercise_done),
                     onClick = onExerciseDone,
                     leadingIcon = Icons.Rounded.CheckCircle,
                     brush = MintBrush,
@@ -860,13 +877,13 @@ private fun ActionDock(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SecondaryAction(
-                        label = "+30s rest",
+                        label = stringResource(R.string.action_add_30_seconds),
                         onClick = onAddThirty,
                         leadingIcon = Icons.Rounded.AddAlarm,
                         modifier = Modifier.weight(1f),
                     )
                     SecondaryAction(
-                        label = "Finish",
+                        label = stringResource(R.string.action_finish),
                         onClick = onFinish,
                         leadingIcon = Icons.Rounded.Stop,
                         modifier = Modifier.weight(1f),
