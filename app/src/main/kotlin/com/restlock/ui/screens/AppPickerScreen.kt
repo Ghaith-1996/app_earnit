@@ -1,5 +1,9 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -93,12 +97,12 @@ fun AppPickerScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 SecondaryAction(
-                    label = "Clear allowed",
+                    label = stringResource(R.string.action_clear_allowed),
                     onClick = viewModel::clearAllowed,
                     modifier = Modifier.weight(1f),
                 )
                 PrimaryAction(
-                    label = "Save",
+                    label = stringResource(R.string.action_save),
                     onClick = { viewModel.save(onSaved) },
                     brush = PrimaryBrush,
                     modifier = Modifier.weight(1f),
@@ -119,20 +123,20 @@ private fun PickerTopBar(allowedCount: Int, onBack: () -> Unit) {
         IconButton(onClick = onBack) {
             Icon(
                 imageVector = Icons.Rounded.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.action_back),
                 tint = RestLockPalette.TextHigh,
             )
         }
         Spacer(Modifier.width(4.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Apps allowed during lock",
+                text = stringResource(R.string.apps_allowed_title),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = RestLockPalette.TextHigh,
             )
             Text(
-                text = if (allowedCount == 0) "Strict mode: only base apps stay open"
-                else "$allowedCount allowed",
+                text = if (allowedCount == 0) stringResource(R.string.apps_strict_description)
+                else pluralStringResource(R.plurals.apps_allowed_count, allowedCount, allowedCount),
                 style = MaterialTheme.typography.bodyMedium,
                 color = RestLockPalette.TextLow,
             )
@@ -154,7 +158,7 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
         },
         placeholder = {
             Text(
-                text = "Search installed apps",
+                text = stringResource(R.string.apps_search),
                 color = RestLockPalette.TextLow,
             )
         },
@@ -262,7 +266,7 @@ private fun SelectionDot(isSelected: Boolean) {
         if (isSelected) {
             Icon(
                 imageVector = Icons.Rounded.Check,
-                contentDescription = "Selected",
+                contentDescription = stringResource(R.string.description_selected),
                 tint = Color.White,
                 modifier = Modifier.size(16.dp),
             )
@@ -285,8 +289,8 @@ private fun EmptyState(query: String) {
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = if (query.isBlank()) "No installed apps to allow."
-            else "No apps match \"$query\".",
+            text = if (query.isBlank()) stringResource(R.string.apps_empty)
+            else stringResource(R.string.apps_no_match, query),
             style = MaterialTheme.typography.titleMedium,
             color = RestLockPalette.TextMid,
         )

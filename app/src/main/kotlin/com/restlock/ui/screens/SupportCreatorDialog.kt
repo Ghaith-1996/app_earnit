@@ -1,5 +1,8 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,14 +39,14 @@ fun SupportCreatorDialog(
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Support the creator?",
+                        text = stringResource(R.string.support_title),
                         style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                         color = RestLockPalette.TextHigh,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        text = "Could you watch a short ad to support the creator of Earn it!?",
+                        text = stringResource(R.string.support_description),
                         style = MaterialTheme.typography.bodyLarge,
                         color = RestLockPalette.TextMid,
                         textAlign = TextAlign.Center,
@@ -52,14 +55,14 @@ fun SupportCreatorDialog(
                 }
 
                 PrimaryAction(
-                    label = "Yes, support the creator",
+                    label = stringResource(R.string.action_support_creator),
                     onClick = onWatchAd,
                     leadingIcon = Icons.Rounded.Favorite,
                     brush = MintBrush,
                     contentColor = RestLockPalette.Ink0,
                 )
                 SecondaryAction(
-                    label = "No thanks",
+                    label = stringResource(R.string.action_no_thanks),
                     onClick = onNoThanks,
                 )
             }

@@ -1,5 +1,7 @@
 package com.restlock.ui
 
+import androidx.annotation.StringRes
+import com.fitness.restlock.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.restlock.domain.ExerciseCatalog
@@ -35,7 +37,7 @@ private data class WorkoutBuilderState(
 )
 
 private data class WorkoutManagementState(
-    val message: String? = null,
+    @StringRes val message: Int? = null,
     val pendingDeletion: PlannedWorkout? = null,
     val isDeleting: Boolean = false,
 )
@@ -58,7 +60,7 @@ data class WorkoutUiState(
     val estimatedMinutes: Int = 0,
     val profile: UserProfile = UserProfile(),
     val isSaving: Boolean = false,
-    val message: String? = null,
+    @StringRes val message: Int? = null,
     val pendingDeletion: PlannedWorkout? = null,
     val isDeleting: Boolean = false,
 )
@@ -126,16 +128,16 @@ class WorkoutViewModel(
                 val activeId = fitnessRepository.activeWorkoutId.first()
                 if (request != editRequest) return@launch
                 if (activeId == workout.id) {
-                    showMessage(ActiveEditMessage)
+                    showMessage(R.string.workout_active_edit)
                     return@launch
                 }
                 if (saved == null) {
-                    showMessage("This workout no longer exists.")
+                    showMessage(R.string.workout_missing)
                     return@launch
                 }
                 openEditor(saved)
             } catch (_: IOException) {
-                if (request == editRequest) showMessage("Couldn't open the workout. Please try again.")
+                if (request == editRequest) showMessage(R.string.workout_open_failed)
             }
         }
     }
@@ -243,7 +245,7 @@ class WorkoutViewModel(
         if (!builder.isOpen || builder.isSaving) return
         val plannedExercises = builder.plannedExercises.normalizedWorkoutExercises()
         if (plannedExercises.isEmpty()) {
-            showMessage("Add at least one exercise before saving.")
+            showMessage(R.string.workout_add_exercise_required)
             return
         }
         builderState.value = builder.copy(isSaving = true)
@@ -254,7 +256,7 @@ class WorkoutViewModel(
                 if (builder.editingWorkoutId != null &&
                     fitnessRepository.activeWorkoutId.first() == builder.editingWorkoutId
                 ) {
-                    if (builderState.value.token == builder.token) showMessage(ActiveEditMessage)
+                    if (builderState.value.token == builder.token) showMessage(R.string.workout_active_edit)
                     return@launch
                 }
                 val now = System.currentTimeMillis()
@@ -271,13 +273,13 @@ class WorkoutViewModel(
                 if (builderState.value.token != builder.token) return@launch
                 when (result) {
                     WorkoutMutationResult.Success -> closeBuilder()
-                    WorkoutMutationResult.ActiveWorkout -> showMessage(ActiveEditMessage)
-                    WorkoutMutationResult.InvalidWorkout -> showMessage("Add at least one valid exercise before saving.")
-                    WorkoutMutationResult.NotFound -> showMessage("This workout no longer exists. Close the builder to create a new routine.")
+                    WorkoutMutationResult.ActiveWorkout -> showMessage(R.string.workout_active_edit)
+                    WorkoutMutationResult.InvalidWorkout -> showMessage(R.string.workout_valid_exercise_required)
+                    WorkoutMutationResult.NotFound -> showMessage(R.string.workout_missing_edit)
                 }
             } catch (_: IOException) {
                 if (builderState.value.token == builder.token) {
-                    showMessage("Couldn't save the workout. Your changes are still here. Please try again.")
+                    showMessage(R.string.workout_save_failed)
                 }
             } finally {
                 builderState.update { current ->
@@ -311,17 +313,17 @@ class WorkoutViewModel(
                     WorkoutMutationResult.Success -> {
                         editRequest++ // Invalidate an editor still loading the deleted routine.
                         if (builderState.value.editingWorkoutId == workout.id) closeBuilder()
-                        showMessage("Workout deleted. Your workout history is unchanged.")
+                        showMessage(R.string.workout_deleted)
                     }
                     WorkoutMutationResult.ActiveWorkout -> showMessage(
-                        "This workout is currently active. Finish or end the workout before deleting it."
+                        R.string.workout_active_delete
                     )
-                    WorkoutMutationResult.NotFound -> showMessage("This workout no longer exists.")
-                    WorkoutMutationResult.InvalidWorkout -> showMessage("Couldn't delete this workout.")
+                    WorkoutMutationResult.NotFound -> showMessage(R.string.workout_missing)
+                    WorkoutMutationResult.InvalidWorkout -> showMessage(R.string.workout_delete_invalid)
                 }
                 managementState.update { it.copy(pendingDeletion = null) }
             } catch (_: IOException) {
-                showMessage("Couldn't delete the workout. Please try again.")
+                showMessage(R.string.workout_delete_failed)
             } finally {
                 managementState.update { it.copy(isDeleting = false) }
             }
@@ -332,15 +334,11 @@ class WorkoutViewModel(
         managementState.update { it.copy(message = null) }
     }
 
-    private fun showMessage(message: String) {
+    private fun showMessage(@StringRes message: Int) {
         managementState.update { it.copy(message = message) }
     }
 
     private fun updateBuilder(transform: (WorkoutBuilderState) -> WorkoutBuilderState) {
         builderState.update { if (it.isOpen && !it.isSaving) transform(it) else it }
-    }
-
-    private companion object {
-        const val ActiveEditMessage = "This workout is currently active. Finish or end the workout before editing it."
     }
 }

@@ -1,5 +1,9 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -83,22 +87,22 @@ fun WorkoutScreen(
     state.pendingDeletion?.let { workout ->
         AlertDialog(
             onDismissRequest = viewModel::cancelDeleteWorkout,
-            title = { Text("Delete \"${workout.name}\"?") },
+            title = { Text(stringResource(R.string.workout_delete_title, workout.name)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("This removes the saved routine. Your workout history will not be deleted.")
-                    state.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Text(stringResource(R.string.workout_delete_body))
+                    state.message?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                 }
             },
             dismissButton = {
                 TextButton(onClick = viewModel::cancelDeleteWorkout, enabled = !state.isDeleting) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmDeleteWorkout, enabled = !state.isDeleting) {
                     Text(
-                        if (state.isDeleting) "Deleting..." else "Delete",
+                        if (state.isDeleting) stringResource(R.string.action_deleting) else stringResource(R.string.action_delete),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -124,15 +128,15 @@ fun WorkoutScreen(
         ) {
             state.message?.let { message ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(message, modifier = Modifier.weight(1f), color = RestLockPalette.TextMid)
+                    Text(stringResource(message), modifier = Modifier.weight(1f), color = RestLockPalette.TextMid)
                     IconButton(onClick = viewModel::dismissMessage) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Dismiss message")
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.action_dismiss_message))
                     }
                 }
             }
             if (sessionActive) {
-                Text("A workout is running. Finish or end it before editing routines or starting another workout.")
-                SecondaryAction(label = "Return to session", onClick = onHome)
+                Text(stringResource(R.string.workout_running_hint))
+                SecondaryAction(label = stringResource(R.string.action_return_session), onClick = onHome)
             }
             if (state.isBuilderOpen && !sessionActive) {
                 WorkoutBuilder(
@@ -179,12 +183,12 @@ private fun WorkoutsTopBar() {
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
-            text = "Workouts",
+            text = stringResource(R.string.nav_workouts),
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
             color = RestLockPalette.TextHigh,
         )
         Text(
-            text = "Create routines from the exercise catalog.",
+            text = stringResource(R.string.workouts_description),
             style = MaterialTheme.typography.bodyMedium,
             color = RestLockPalette.TextLow,
         )
@@ -204,18 +208,18 @@ private fun WorkoutOverview(
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "Add a workout",
+                    text = stringResource(R.string.workouts_add_title),
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = RestLockPalette.TextHigh,
                 )
                 Text(
-                    text = "Pick a muscle section, add exercises, then save and start your workout.",
+                    text = stringResource(R.string.workouts_add_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextLow,
                 )
             }
             PrimaryAction(
-                label = "Add workout",
+                label = stringResource(R.string.action_add_workout),
                 onClick = onAddWorkout,
                 enabled = !sessionActive,
                 leadingIcon = Icons.Rounded.Add,
@@ -246,14 +250,14 @@ private fun SavedWorkoutsCard(
     GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 18) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                text = "Saved workouts",
+                text = stringResource(R.string.workouts_saved_title),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = RestLockPalette.TextHigh,
             )
 
             if (state.savedWorkouts.isEmpty()) {
                 Text(
-                    text = "No saved workouts yet.",
+                    text = stringResource(R.string.workouts_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextMid,
                 )
@@ -316,7 +320,13 @@ private fun SavedWorkoutRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${workout.exercises.size} exercises - ${workout.totalSets} sets - $minutes min - ~$calories kcal",
+                text = stringResource(
+                    R.string.workout_metrics,
+                    pluralStringResource(R.plurals.exercise_count, workout.exercises.size, workout.exercises.size),
+                    pluralStringResource(R.plurals.set_count, workout.totalSets, workout.totalSets),
+                    minutes,
+                    calories,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = RestLockPalette.TextLow,
             )
@@ -328,23 +338,23 @@ private fun SavedWorkoutRow(
         ) {
             Icon(
                 imageVector = Icons.Rounded.PlayArrow,
-                contentDescription = "Start ${workout.name}",
+                contentDescription = stringResource(R.string.workout_start_description, workout.name),
                 tint = RestLockPalette.Mint,
             )
         }
         Box {
             IconButton(onClick = { menuExpanded = true }) {
-                Icon(Icons.Rounded.MoreVert, contentDescription = "Actions for ${workout.name}", tint = RestLockPalette.TextMid)
+                Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.workout_actions_description, workout.name), tint = RestLockPalette.TextMid)
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 DropdownMenuItem(
-                    text = { Text("Edit") },
+                    text = { Text(stringResource(R.string.action_edit)) },
                     leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
                     enabled = !sessionActive,
                     onClick = { menuExpanded = false; onEdit() },
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    text = { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) },
                     leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                     onClick = { menuExpanded = false; onDelete() },
                 )
@@ -358,7 +368,7 @@ private fun ExerciseCatalogCard(state: WorkoutUiState) {
     GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 18) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                text = "Exercise list",
+                text = stringResource(R.string.workouts_exercise_list),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = RestLockPalette.TextHigh,
             )
@@ -375,7 +385,7 @@ private fun ExerciseCatalogCard(state: WorkoutUiState) {
                         color = RestLockPalette.TextMid,
                     )
                     Text(
-                        text = "$count exercises",
+                        text = pluralStringResource(R.plurals.exercise_count, count, count),
                         style = MaterialTheme.typography.labelMedium,
                         color = RestLockPalette.TextLow,
                     )
@@ -409,12 +419,18 @@ private fun WorkoutBuilder(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (state.isEditingWorkout) "Modify workout" else "Workout builder",
+                        text = if (state.isEditingWorkout) stringResource(R.string.workouts_modify) else stringResource(R.string.workouts_builder),
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = RestLockPalette.TextHigh,
                     )
                     Text(
-                        text = "${state.selectedExercises.size} exercises - ${state.selectedExercises.sumOf { it.plan.sets }} sets - ${state.estimatedMinutes} min - ~${state.estimatedCalories} kcal",
+                        text = stringResource(
+                            R.string.workout_metrics,
+                            pluralStringResource(R.plurals.exercise_count, state.selectedExercises.size, state.selectedExercises.size),
+                            pluralStringResource(R.plurals.set_count, state.selectedExercises.sumOf { it.plan.sets }, state.selectedExercises.sumOf { it.plan.sets }),
+                            state.estimatedMinutes,
+                            state.estimatedCalories,
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = RestLockPalette.TextLow,
                     )
@@ -422,7 +438,7 @@ private fun WorkoutBuilder(
                 IconButton(onClick = onClose) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
-                        contentDescription = "Close",
+                        contentDescription = stringResource(R.string.action_close),
                         tint = RestLockPalette.TextMid,
                     )
                 }
@@ -434,7 +450,7 @@ private fun WorkoutBuilder(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 enabled = !state.isSaving,
-                label = { Text("Workout name") },
+                label = { Text(stringResource(R.string.workouts_name)) },
             )
 
             SelectedExercisePlan(
@@ -464,7 +480,7 @@ private fun WorkoutBuilder(
             }
 
             PrimaryAction(
-                label = if (state.isSaving) "Saving..." else if (state.isEditingWorkout) "Save changes" else "Save workout",
+                label = if (state.isSaving) stringResource(R.string.action_saving) else if (state.isEditingWorkout) stringResource(R.string.action_save_changes) else stringResource(R.string.action_save_workout),
                 onClick = onSaveWorkout,
                 leadingIcon = Icons.Rounded.Check,
                 enabled = state.selectedExercises.isNotEmpty() && !state.isSaving,
@@ -485,7 +501,7 @@ private fun SelectedExercisePlan(
 ) {
     if (selectedExercises.isEmpty()) {
         Text(
-            text = "No exercises selected yet.",
+            text = stringResource(R.string.workouts_no_selection),
             style = MaterialTheme.typography.bodyMedium,
             color = RestLockPalette.TextMid,
         )
@@ -494,7 +510,7 @@ private fun SelectedExercisePlan(
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = "Workout order",
+            text = stringResource(R.string.workouts_order),
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
             color = RestLockPalette.TextHigh,
         )
@@ -569,7 +585,7 @@ private fun SelectedExerciseRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${item.definition.section} - ${item.definition.equipment.label}",
+                    text = stringResource(R.string.exercise_section_equipment, item.definition.section, item.definition.equipment.label),
                     style = MaterialTheme.typography.bodySmall,
                     color = RestLockPalette.TextLow,
                 )
@@ -580,7 +596,7 @@ private fun SelectedExerciseRow(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.KeyboardArrowUp,
-                    contentDescription = "Move exercise up",
+                    contentDescription = stringResource(R.string.action_move_exercise_up),
                     tint = if (canMoveUp) RestLockPalette.TextMid else RestLockPalette.TextLow.copy(alpha = 0.35f),
                 )
             }
@@ -590,7 +606,7 @@ private fun SelectedExerciseRow(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = "Move exercise down",
+                    contentDescription = stringResource(R.string.action_move_exercise_down),
                     tint = if (canMoveDown) RestLockPalette.TextMid else RestLockPalette.TextLow.copy(alpha = 0.35f),
                 )
             }
@@ -598,14 +614,14 @@ private fun SelectedExerciseRow(
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             CounterControl(
-                label = "Sets",
+                label = stringResource(R.string.label_sets),
                 value = item.plan.sets,
                 onDecrease = { onSetExerciseSets(exerciseId, item.plan.sets - 1) },
                 onIncrease = { onSetExerciseSets(exerciseId, item.plan.sets + 1) },
                 modifier = Modifier.weight(1f),
             )
             CounterControl(
-                label = "Reps",
+                label = stringResource(R.string.label_reps),
                 value = item.plan.reps,
                 onDecrease = { onSetExerciseReps(exerciseId, item.plan.reps - 1) },
                 onIncrease = { onSetExerciseReps(exerciseId, item.plan.reps + 1) },
@@ -613,7 +629,7 @@ private fun SelectedExerciseRow(
             )
         }
         TextButton(onClick = { onRemoveExercise(exerciseId) }) {
-            Text("Remove exercise", color = RestLockPalette.TextMid)
+            Text(stringResource(R.string.action_remove_exercise), color = RestLockPalette.TextMid)
         }
     }
 }
@@ -644,7 +660,7 @@ private fun CounterControl(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Remove,
-                contentDescription = "Decrease $label",
+                contentDescription = stringResource(R.string.action_decrease, label),
                 tint = RestLockPalette.TextMid,
                 modifier = Modifier.size(18.dp),
             )
@@ -676,7 +692,7 @@ private fun CounterControl(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Add,
-                contentDescription = "Increase $label",
+                contentDescription = stringResource(R.string.action_increase, label),
                 tint = RestLockPalette.Mint,
                 modifier = Modifier.size(18.dp),
             )
@@ -744,12 +760,12 @@ private fun ExerciseRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${exercise.section} - ${exercise.equipment.label}",
+                text = stringResource(R.string.exercise_section_equipment, exercise.section, exercise.equipment.label),
                 style = MaterialTheme.typography.bodySmall,
                 color = RestLockPalette.TextLow,
             )
             Text(
-                text = "${exercise.defaultMinutes} min - ${exercise.met} MET - ~$calories kcal",
+                text = stringResource(R.string.exercise_estimates, exercise.defaultMinutes, exercise.met.toString(), calories),
                 style = MaterialTheme.typography.labelSmall,
                 color = RestLockPalette.TextLow,
                 maxLines = 1,
@@ -759,7 +775,7 @@ private fun ExerciseRow(
         IconButton(onClick = onToggle) {
             Icon(
                 imageVector = if (selected) Icons.Rounded.Check else Icons.Rounded.Add,
-                contentDescription = if (selected) "Remove exercise" else "Add exercise",
+                contentDescription = if (selected) stringResource(R.string.action_remove_exercise) else stringResource(R.string.action_add_exercise),
                 tint = if (selected) RestLockPalette.Mint else RestLockPalette.TextMid,
             )
         }

@@ -1,5 +1,8 @@
 package com.restlock.ui.components
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -37,17 +40,17 @@ fun StateChip(
 ) {
     val appearance = when (phase) {
         SessionState.Phase.Idle -> ChipAppearance(
-            label = "READY",
+            label = stringResource(R.string.state_ready),
             color = RestLockPalette.TextLow,
             pulses = false,
         )
         SessionState.Phase.Resting -> ChipAppearance(
-            label = "RESTING",
+            label = stringResource(R.string.state_resting),
             color = RestLockPalette.Mint,
             pulses = true,
         )
         SessionState.Phase.AwaitingDecision -> ChipAppearance(
-            label = "DECISION",
+            label = stringResource(R.string.state_decision),
             color = RestLockPalette.Amber,
             pulses = true,
         )

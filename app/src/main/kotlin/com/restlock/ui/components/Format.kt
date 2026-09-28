@@ -1,5 +1,9 @@
 package com.restlock.ui.components
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.Composable
+
 import kotlin.math.ceil
 import kotlin.time.Duration
 
@@ -19,11 +23,12 @@ fun Duration.toClockString(): String {
 /**
  * Short, human label like "90s" or "3m" for chips and presets.
  */
+@Composable
 fun Duration.toCompactLabel(): String {
     val secs = this.inWholeSeconds
     return when {
-        secs < 60 -> "${secs}s"
-        secs % 60 == 0L -> "${secs / 60}m"
-        else -> "${secs / 60}m ${secs % 60}s"
+        secs < 60 -> stringResource(R.string.duration_compact_seconds, secs)
+        secs % 60 == 0L -> stringResource(R.string.duration_compact_minutes, secs / 60)
+        else -> stringResource(R.string.duration_compact_minutes_seconds, secs / 60, secs % 60)
     }
 }

@@ -1,5 +1,8 @@
 package com.restlock.ui.screens
 
+import com.fitness.restlock.R
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -117,12 +120,12 @@ private fun SettingsTopBar() {
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
-            text = "Settings",
+            text = stringResource(R.string.nav_settings),
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
             color = RestLockPalette.TextHigh,
         )
         Text(
-            text = "Personalize calorie estimates.",
+            text = stringResource(R.string.settings_description),
             style = MaterialTheme.typography.bodyMedium,
             color = RestLockPalette.TextLow,
         )
@@ -145,12 +148,12 @@ private fun ProfileCard(
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "Body profile",
+                    text = stringResource(R.string.settings_profile_title),
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = RestLockPalette.TextHigh,
                 )
                 Text(
-                    text = "Weight drives exercise calories; age, sex, and height refine your resting burn.",
+                    text = stringResource(R.string.settings_profile_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = RestLockPalette.TextLow,
                 )
@@ -160,13 +163,13 @@ private fun ProfileCard(
                 ProfileNumberField(
                     value = ageText,
                     onValueChange = onAgeChange,
-                    label = "Age",
+                    label = stringResource(R.string.settings_age),
                     modifier = Modifier.weight(1f),
                 )
                 ProfileNumberField(
                     value = heightText,
                     onValueChange = onHeightChange,
-                    label = "Height cm",
+                    label = stringResource(R.string.settings_height),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -174,7 +177,7 @@ private fun ProfileCard(
             ProfileNumberField(
                 value = weightText,
                 onValueChange = onWeightChange,
-                label = "Weight kg",
+                label = stringResource(R.string.settings_weight),
                 modifier = Modifier.fillMaxWidth(),
                 decimal = true,
             )
@@ -182,7 +185,7 @@ private fun ProfileCard(
             SexPicker(selectedSex = sex, onSexChange = onSexChange)
 
             PrimaryAction(
-                label = "Save settings",
+                label = stringResource(R.string.action_save_settings),
                 onClick = onSave,
                 leadingIcon = Icons.Rounded.Save,
                 brush = PrimaryBrush,
@@ -234,7 +237,11 @@ private fun SexPicker(
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             ) {
                 Text(
-                    text = sex.label,
+                    text = stringResource(when (sex) {
+                        UserSex.Unspecified -> R.string.settings_sex_unspecified
+                        UserSex.Male -> R.string.settings_sex_male
+                        UserSex.Female -> R.string.settings_sex_female
+                    }),
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                     color = if (selected) RestLockPalette.Ink0 else RestLockPalette.TextMid,
                 )
@@ -251,21 +258,25 @@ private fun EstimateCard(
     GlassCard(modifier = Modifier.fillMaxWidth(), contentPadding = 18) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                text = "Calorie model",
+                text = stringResource(R.string.settings_calorie_model),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = RestLockPalette.TextHigh,
             )
             Text(
                 text = if (restingMetabolicRate == null) {
-                    "Complete the profile to use a personalized resting metabolic rate. Until then, workouts use the MET formula with your weight or a 70 kg reference."
+                    stringResource(R.string.settings_incomplete_profile)
                 } else {
-                    "Resting metabolic rate: ~$restingMetabolicRate kcal/day. Workout calories use exercise MET values multiplied by your profile-based resting burn."
+                    stringResource(R.string.settings_metabolic_rate, restingMetabolicRate)
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = RestLockPalette.TextLow,
             )
             Text(
-                text = "Current profile: ${profile.weightKg?.let { "$it kg" } ?: "weight not set"}, ${profile.heightCm?.let { "$it cm" } ?: "height not set"}.",
+                text = stringResource(
+                    R.string.settings_current_profile,
+                    profile.weightKg?.let { stringResource(R.string.weight_kg, it.toString()) } ?: stringResource(R.string.settings_weight_not_set),
+                    profile.heightCm?.let { stringResource(R.string.height_cm, it) } ?: stringResource(R.string.settings_height_not_set),
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = RestLockPalette.TextMid,
             )

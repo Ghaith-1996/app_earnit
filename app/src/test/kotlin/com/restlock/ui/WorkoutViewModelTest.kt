@@ -1,5 +1,6 @@
 package com.restlock.ui
 
+import com.fitness.restlock.R
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
 import com.restlock.domain.ActiveWorkoutSession
@@ -41,7 +42,7 @@ class WorkoutViewModelTest {
         assertThat(f.repository.saveCalls).isEqualTo(0)
         assertThat(f.repository.savedWorkouts.first()).isEmpty()
         assertThat(f.vm.uiState.value.isBuilderOpen).isTrue()
-        assertThat(f.vm.uiState.value.message).contains("at least one exercise")
+        assertThat(f.vm.uiState.value.message).isEqualTo(R.string.workout_add_exercise_required)
     }
 
     @Test
@@ -183,7 +184,7 @@ class WorkoutViewModelTest {
         subscribe(f.vm)
         runCurrent()
         assertThat(f.vm.uiState.value.isBuilderOpen).isFalse()
-        assertThat(f.vm.uiState.value.message).contains("before editing")
+        assertThat(f.vm.uiState.value.message).isEqualTo(R.string.workout_active_edit)
         assertThat(f.repository.savedWorkouts.first()).containsExactly(original)
     }
 
@@ -201,7 +202,7 @@ class WorkoutViewModelTest {
         assertThat(f.repository.savedWorkouts.first()).containsExactly(original)
         assertThat(f.vm.uiState.value.isBuilderOpen).isTrue()
         assertThat(f.vm.uiState.value.isSaving).isFalse()
-        assertThat(f.vm.uiState.value.message).contains("before editing")
+        assertThat(f.vm.uiState.value.message).isEqualTo(R.string.workout_active_edit)
     }
 
     @Test
@@ -220,7 +221,7 @@ class WorkoutViewModelTest {
         gate.complete(Unit)
         runCurrent()
         assertThat(f.repository.savedWorkouts.first()).containsExactly(original)
-        assertThat(f.vm.uiState.value.message).contains("before editing")
+        assertThat(f.vm.uiState.value.message).isEqualTo(R.string.workout_active_edit)
         assertThat(f.vm.uiState.value.workoutName).isEqualTo("Unsaved change")
     }
 
@@ -236,7 +237,7 @@ class WorkoutViewModelTest {
         runCurrent()
         assertThat(f.repository.savedWorkouts.first()).isEmpty()
         assertThat(f.vm.uiState.value.isBuilderOpen).isTrue()
-        assertThat(f.vm.uiState.value.message).contains("no longer exists")
+        assertThat(f.vm.uiState.value.message).isEqualTo(R.string.workout_missing_edit)
     }
 
     @Test
@@ -276,7 +277,7 @@ class WorkoutViewModelTest {
         assertThat(f.vm.uiState.value.isSaving).isFalse()
         assertThat(f.vm.uiState.value.workoutName).isEqualTo("Keep my changes")
         assertThat(f.vm.uiState.value.selectedExercises).hasSize(1)
-        assertThat(f.vm.uiState.value.message).contains("Couldn't save")
+        assertThat(f.vm.uiState.value.message).isEqualTo(R.string.workout_save_failed)
         assertThat(f.repository.savedWorkouts.first()).isEmpty()
         f.repository.failSave = false
         f.vm.saveWorkout()
@@ -323,7 +324,7 @@ class WorkoutViewModelTest {
         runCurrent()
         assertThat(f.repository.savedWorkouts.first()).containsExactly(original)
         assertThat(f.repository.activeWorkoutId.first()).isEqualTo(original.id)
-        assertThat(f.vm.uiState.value.message).contains("before deleting")
+        assertThat(f.vm.uiState.value.message).isEqualTo(R.string.workout_active_delete)
     }
 
     @Test
@@ -338,7 +339,7 @@ class WorkoutViewModelTest {
         f.vm.confirmDeleteWorkout()
         runCurrent()
         assertThat(f.repository.savedWorkouts.first()).containsExactly(other)
-        assertThat(f.vm.uiState.value.message).contains("no longer exists")
+        assertThat(f.vm.uiState.value.message).isEqualTo(R.string.workout_missing)
         assertThat(f.vm.uiState.value.pendingDeletion).isNull()
     }
 
@@ -354,7 +355,7 @@ class WorkoutViewModelTest {
         assertThat(f.repository.savedWorkouts.first()).containsExactly(original)
         assertThat(f.vm.uiState.value.pendingDeletion).isEqualTo(original)
         assertThat(f.vm.uiState.value.isDeleting).isFalse()
-        assertThat(f.vm.uiState.value.message).contains("Couldn't delete")
+        assertThat(f.vm.uiState.value.message).isEqualTo(R.string.workout_delete_failed)
         f.repository.failDelete = false
         f.vm.confirmDeleteWorkout()
         runCurrent()
